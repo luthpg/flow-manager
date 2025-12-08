@@ -1,0 +1,4 @@
+onlyBuiltDependencies:
+  - core-js
+  - esbuild
+minimunReleaseAge: 2880
