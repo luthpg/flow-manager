@@ -1,4 +1,3 @@
-import type { FlowGraphData } from '~/types/flow';
 import { APP_CONFIG, SHEET_NAMES } from '../constants';
 import { SheetDB } from '../repository/SheetDB';
 import {
@@ -6,28 +5,14 @@ import {
   generateReleaseVersionId,
 } from '../utils/version';
 import { AuthService } from './AuthService';
-
-// 型定義 (requirements.md準拠)
-export type FlowStatus = 'DRAFT' | 'PENDING' | 'PUBLISHED' | 'REJECTED';
-
-export interface FlowVersion {
-  version_id: string;
-  flow_id: string;
-  version_num: number;
-  status: FlowStatus;
-  json_data: string;
-  created_by: string;
-  created_at: string;
-  comment: string;
-}
-
-export interface FlowMeta {
-  flow_id: string;
-  folder_id: string;
-  title: string;
-  current_status: FlowStatus;
-  updated_at: string;
-}
+import type {
+  FlowData,
+  FlowGraphData,
+  FlowMeta,
+  FlowSheet,
+  FlowStatus,
+  FlowVersionDetail,
+} from '~/types/flow';
 
 export class FlowService {
   private db: SheetDB;
@@ -60,7 +45,7 @@ export class FlowService {
     // 2. ドラフトIDの決定
     const targetVersionId = generateDraftVersionId(userEmail);
 
-    const versions = this.db.getData<FlowVersion>(SHEET_NAMES.FLOW_VERSIONS);
+    const versions = this.db.getData<FlowVersionDetail>(SHEET_NAMES.FLOW_VERSIONS);
     const existingDraft = versions.find(
       (v) => v.flow_id === flowId && v.version_id === targetVersionId,
     );
@@ -176,7 +161,7 @@ export class FlowService {
     currentVersionId: string,
     approverEmail: string,
     comment: string,
-    graphData?: FlowGraphData,
+    graphData?: object,
   ) {
     const lock = LockService.getScriptLock();
     try {

@@ -1,3 +1,4 @@
+import type { Role } from '~/types/flow';
 import { SHEET_NAMES } from '../constants';
 import { SheetDB } from '../repository/SheetDB';
 
@@ -8,9 +9,6 @@ export const ROLE_LEVELS: Record<Role, number> = {
   APPROVER: 31,
   ADMIN: 99,
 };
-
-// 型定義
-export type Role = 'VIEWER' | 'EDITOR' | 'APPROVER' | 'ADMIN';
 
 export interface PermissionRow {
   permission_id: string;
@@ -57,7 +55,7 @@ export class AuthService {
     const targetUser = users.find((u) => u.email === userEmail);
 
     const userGroups =
-      targetUser && targetUser.groups
+      targetUser?.groups
         ? targetUser.groups.split(',').map((g) => g.trim())
         : [];
 

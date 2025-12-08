@@ -1,5 +1,3 @@
-import type { FlowGraphData } from '~/types/flow';
-import { SheetDB } from './app';
 import { AuthService } from './service/AuthService';
 import { FlowService } from './service/FlowService';
 import { response } from './utils/response';
@@ -105,7 +103,7 @@ export function approveFlow(payload: {
   flowId: string;
   versionId: string;
   comment: string;
-  graphData?: FlowGraphData;
+  graphData?: object;
 }) {
   try {
     const email = Session.getActiveUser().getEmail();

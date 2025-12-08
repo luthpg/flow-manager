@@ -24,11 +24,7 @@ export default defineConfig({
     tsconfigPaths(),
     tailwindcss(),
     cityGasRouter(),
-    gasnuki({
-      srcDir: 'server',
-      outDir: 'types/appsscript',
-      outputFile: 'client.ts',
-    }),
+    gasnuki(),
     gas(),
     viteSingleFile(),
   ],

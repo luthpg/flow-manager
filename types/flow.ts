@@ -10,18 +10,22 @@ export interface FlowSheet {
   name: string;
   nodes: Node[];
   edges: Edge[];
-  // 将来的な拡張用 (ズーム状態など)
   viewport?: { x: number; y: number; zoom: number };
 }
 
+/**
+ * フロー全体の定義
+ */
 export interface FlowData {
   /** フロー全体のメタ情報 */
   meta: FlowMeta;
   graphData: FlowGraphData;
 }
 
-// --- 保存されるJSONデータ全体 ---
-// サーバーの 'json_data' カラムには、このオブジェクトがJSON文字列化されて格納されます
+/**
+ * 保存されるJSONデータ全体
+ * サーバーの 'json_data' カラムには、このオブジェクトがJSON文字列化されて格納されます
+ */
 export interface FlowGraphData {
   /** シートのリスト */
   sheets: FlowSheet[];
@@ -29,7 +33,9 @@ export interface FlowGraphData {
   activeSheetId: string;
 }
 
-// --- フローのメタデータ (ダッシュボード表示用) ---
+/**
+ * フローのメタデータ (ダッシュボード表示用)
+ */
 export interface FlowMeta {
   flowId: string;
   versionId: string;
@@ -41,7 +47,9 @@ export interface FlowMeta {
   thumbnail?: string;
 }
 
-// --- バージョン詳細 (履歴表示用) ---
+/**
+ * バージョン詳細 (履歴表示用)
+ */
 export interface FlowVersionDetail {
   versionId: string;
   versionNum: number;

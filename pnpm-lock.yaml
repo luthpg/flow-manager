@@ -12,8 +12,8 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(vite@7.2.6(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))(vue@3.5.25(typescript@5.9.3))(zod@4.1.13)
       '@ciderjs/gasnuki':
-        specifier: ^0.3.2
-        version: 0.3.2(vite@7.2.6(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))
+        specifier: ../gasnuki
+        version: link:../gasnuki
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -329,12 +329,6 @@ packages:
     peerDependenciesMeta:
       react-dom:
         optional: true
-
-  '@ciderjs/gasnuki@0.3.2':
-    resolution: {integrity: sha512-H0n9Vge1/a7kY1SeF+uvHlLgDSB3SxryVF0MKCaVTeRRfXp/sVtofSvRxkgRYgS1l+PVo/HjOg3za8ml8lkDEQ==}
-    hasBin: true
-    peerDependencies:
-      vite: ^7
 
   '@clack/core@0.5.0':
     resolution: {integrity: sha512-p3y0FIOwaYRUPRcMO7+dlmLh8PSRcrjuTndsiA0WAFbWES0mLZlrjVoBRZ9DzkPFJZG6KGkJmoEAY0ZcVWTkow==}
@@ -2235,10 +2229,6 @@ packages:
 
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
-
-  consola@3.4.2:
-    resolution: {integrity: sha512-5IKcdX0nnYavi6G7TtOhwkYzyjfJlatbjMjuLSfE2kYT5pMDOilZ4OvMhi637CcDICTmz3wARPoyhqyX1Y+XvA==}
-    engines: {node: ^14.18.0 || >=16.10.0}
 
   content-disposition@1.0.1:
     resolution: {integrity: sha512-oIXISMynqSqm241k6kcQ5UwttDILMK4BiurCfGEREw6+X9jkkpEe5T9FZaApyLGGOnFuyMWZpdolTXMtvEJ08Q==}
@@ -4263,15 +4253,6 @@ snapshots:
       zod: 4.1.13
     optionalDependencies:
       react-dom: 19.2.1(react@19.2.1)
-
-  '@ciderjs/gasnuki@0.3.2(vite@7.2.6(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))':
-    dependencies:
-      chokidar: 4.0.3
-      commander: 14.0.2
-      consola: 3.4.2
-      jiti: 2.6.1
-      ts-morph: 27.0.2
-      vite: 7.2.6(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)
 
   '@clack/core@0.5.0':
     dependencies:
@@ -6368,8 +6349,6 @@ snapshots:
   commander@2.20.3: {}
 
   concat-map@0.0.1: {}
-
-  consola@3.4.2: {}
 
   content-disposition@1.0.1: {}
 
