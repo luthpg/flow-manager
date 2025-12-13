@@ -4,50 +4,48 @@
 /* biome-ignore: auto generated file */
 
 import { z } from 'zod';
-import P_aabc1790 from '../pages/dashboard/index.tsx';
-import P_61aca41e from '../pages/flow/[id]/[version]/edit.tsx';
-import { schema as S_61aca41e } from '../pages/flow/[id]/[version]/edit.tsx';
-import P_40d29dd9 from '../pages/flow/[id]/[version]/preview.tsx';
-import { schema as S_40d29dd9 } from '../pages/flow/[id]/[version]/preview.tsx';
-import P_f1978229 from '../pages/index.tsx';
-import P_5d069492 from '../pages/_root.tsx';
+import P_6b04dcbe from '../pages/_root.tsx';
+import P_455804d3 from '../pages/dashboard/index.tsx';
+import P_11507fba from '../pages/flow/[id]/[version]/edit.tsx';
+import P_2daa02fd from '../pages/flow/[id]/[version]/preview.tsx';
+import P_eaaad4d2 from '../pages/index.tsx';
 
 export const pages = {
-  "/dashboard": {
-    component: P_aabc1790,
+  '/dashboard': {
+    component: P_455804d3,
     isIndex: true,
-    schema: z.object({})
+    schema: z.object({}),
   },
-  "/flow/[id]/[version]/edit": {
-    component: P_61aca41e,
+  '/flow/[id]/[version]/edit': {
+    component: P_11507fba,
     isIndex: false,
-    schema: (S_61aca41e).and(z.object({ id: z.string(), version: z.string() }))
+    schema: z.object({}).and(z.object({ id: z.string(), version: z.string() })),
   },
-  "/flow/[id]/[version]/preview": {
-    component: P_40d29dd9,
+  '/flow/[id]/[version]/preview': {
+    component: P_2daa02fd,
     isIndex: false,
-    schema: (S_40d29dd9).and(z.object({ id: z.string(), version: z.string() }))
+    schema: z.object({}).and(z.object({ id: z.string(), version: z.string() })),
   },
-  "/": {
-    component: P_f1978229,
+  '/': {
+    component: P_eaaad4d2,
     isIndex: true,
-    schema: z.object({})
+    schema: z.object({}),
   },
 };
 
 export const specialPages = {
-  "_root": P_5d069492,
+  _root: P_6b04dcbe,
 };
 
 export const dynamicRoutes = [
   {
-    name: "/flow/[id]/[version]/edit",
+    name: '/flow/[id]/[version]/edit',
     pattern: /^\/flow\/([^/]+)\/([^/]+)\/edit$/,
-    paramNames: ["id","version"]
+    paramNames: ['id', 'version'],
   },
   {
-    name: "/flow/[id]/[version]/preview",
+    name: '/flow/[id]/[version]/preview',
     pattern: /^\/flow\/([^/]+)\/([^/]+)\/preview$/,
-    paramNames: ["id","version"]
-  }
+    paramNames: ['id', 'version'],
+  },
 ];

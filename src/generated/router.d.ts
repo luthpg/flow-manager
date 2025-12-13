@@ -3,13 +3,17 @@
 /* eslint-disable */
 /* biome-ignore: auto generated file */
 
-export type RouteNames = "/dashboard" | "/flow/[id]/[version]/edit" | "/flow/[id]/[version]/preview" | "/";
+export type RouteNames =
+  | '/dashboard'
+  | '/flow/[id]/[version]/edit'
+  | '/flow/[id]/[version]/preview'
+  | '/';
 
 export interface RouteParams {
-  "/dashboard": {};
-  "/flow/[id]/[version]/edit": ({ sheetId?: any }) & Omit<{ id: string; version: string }, keyof ({ sheetId?: any })>;
-  "/flow/[id]/[version]/preview": ({ sheetId?: string }) & Omit<{ id: string; version: string }, keyof ({ sheetId?: string })>;
-  "/": {};
+  '/dashboard': {};
+  '/flow/[id]/[version]/edit': { id: string; version: string };
+  '/flow/[id]/[version]/preview': { id: string; version: string };
+  '/': {};
 }
 
 declare module '@ciderjs/city-gas' {

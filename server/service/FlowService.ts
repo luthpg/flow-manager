@@ -1,3 +1,12 @@
+import type {
+  DashboardFlowItem,
+  FlowMeta,
+  FlowRow,
+  FlowVersionDetail,
+  FlowVersionRow,
+  FolderMeta,
+  FolderRow,
+} from '~/types/flow';
 import { APP_CONFIG, SHEET_NAMES } from '../constants';
 import { SheetDB } from '../repository/SheetDB';
 import {
@@ -5,14 +14,6 @@ import {
   generateReleaseVersionId,
 } from '../utils/version';
 import { AuthService } from './AuthService';
-import type {
-  FlowData,
-  FlowGraphData,
-  FlowMeta,
-  FlowSheet,
-  FlowStatus,
-  FlowVersionDetail,
-} from '~/types/flow';
 
 export class FlowService {
   private db: SheetDB;
@@ -45,7 +46,9 @@ export class FlowService {
     // 2. ドラフトIDの決定
     const targetVersionId = generateDraftVersionId(userEmail);
 
-    const versions = this.db.getData<FlowVersionDetail>(SHEET_NAMES.FLOW_VERSIONS);
+    const versions = this.db.getData<FlowVersionDetail>(
+      SHEET_NAMES.FLOW_VERSIONS,
+    );
     const existingDraft = versions.find(
       (v) => v.flow_id === flowId && v.version_id === targetVersionId,
     );
@@ -103,7 +106,7 @@ export class FlowService {
       );
 
       if (!target || target.status !== 'DRAFT') {
-        throw new Error('申請可能な下書きが見つかりません: ' + versionId);
+        throw new Error(`申請可能な下書きが見つかりません: ${versionId}`);
       }
 
       // ステータス更新
@@ -301,5 +304,77 @@ export class FlowService {
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
     });
+  }
+
+  /**
+   * ダッシュボード用: フロー一覧とフォルダ一覧を一括取得
+   * - N+1問題を避けるため、全バージョンを一括取得してメモリ上で結合する
+   */
+  getDashboardData(userEmail: string): {
+    flows: DashboardFlowItem[];
+    folders: FolderMeta[];
+  } {
+    // 1. 権限確認: アクセス可能なフォルダIDリストを取得
+    const allowedFolderIds = this.auth.getAuthorizedFolderIds(userEmail);
+
+    // 2. データ一括取得 (Spreadsheetへのアクセスはここでまとめる)
+    const allFolders = this.db.getData<FolderRow>(SHEET_NAMES.FOLDERS);
+    const allFlows = this.db.getData<FlowRow>(SHEET_NAMES.FLOWS);
+    const allVersions = this.db.getData<FlowVersionRow>(
+      SHEET_NAMES.FLOW_VERSIONS,
+    );
+
+    // 3. フォルダのフィルタリング & 変換
+    const visibleFolders = allFolders
+      .filter((f) => allowedFolderIds.includes(f.folderId))
+      .map((f) => ({
+        id: f.folderId,
+        name: f.name,
+        parentId: f.parentId,
+      }));
+
+    // 4. フローのフィルタリング
+    // 権限のあるフォルダに属するフローのみ抽出
+    const visibleFlows = allFlows.filter((f) =>
+      allowedFolderIds.includes(f.folderId),
+    );
+
+    // 5. バージョン情報のグルーピング (FlowId -> VersionSummary[])
+    const versionMap = new Map<string, FlowVersionSummary[]>();
+
+    // 最新順にソートしておくとフロントで楽
+    const sortedVersions = allVersions.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    for (const v of sortedVersions) {
+      if (!versionMap.has(v.flowId)) {
+        versionMap.set(v.flowId, []);
+      }
+      // jsonDataは除外して軽量化オブジェクトに変換
+      versionMap.get(v.flowId)?.push(this.toVersionSummary(v));
+    }
+
+    // 6. DashboardFlowItem の構築
+    const dashboardFlows: DashboardFlowItem[] = visibleFlows.map((flowRow) => {
+      const meta = this.toFlowMeta(flowRow);
+      const versions = versionMap.get(flowRow.flowId) || [];
+      return {
+        ...meta,
+        versions,
+      };
+    });
+
+    // 最終更新順でソート
+    dashboardFlows.sort(
+      (a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+
+    return {
+      flows: dashboardFlows,
+      folders: visibleFolders,
+    };
   }
 }

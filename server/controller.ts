@@ -1,3 +1,4 @@
+import type { FlowListResponse } from '~/types/flow';
 import { AuthService } from './service/AuthService';
 import { FlowService } from './service/FlowService';
 import { response } from './utils/response';
@@ -6,17 +7,20 @@ const flowService = new FlowService();
 const authService = new AuthService();
 
 /**
- * ダッシュボード用: フロー一覧取得
- * - 権限: ログインユーザーに関連するフォルダのフローのみ
+ * ダッシュボード用データ取得
+ * 返却型: FlowListResponse
  */
 export function getFlows() {
   try {
     const email = Session.getActiveUser().getEmail();
+    const result = flowService.getDashboardData(email);
 
-    // サービス層で権限フィルタリング済みのリストを取得
-    const flows = flowService.getFlowList(email);
-
-    return response.success(flows);
+    // 型に合わせて返却
+    const res: FlowListResponse = {
+      flows: result.flows,
+      folders: result.folders,
+    };
+    return response.success(res);
   } catch (e) {
     return response.error(e instanceof Error ? e.message : String(e));
   }

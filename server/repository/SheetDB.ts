@@ -8,7 +8,7 @@ export class SheetDB {
       // コンテナバインドされていない場合のエラーハンドリング
       try {
         this.ss = SpreadsheetApp.getActiveSpreadsheet();
-      } catch (e) {
+      } catch (_e) {
         throw new Error(
           'No active spreadsheet found. Please provide a spreadsheet ID.',
         );

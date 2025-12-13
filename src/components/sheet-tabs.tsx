@@ -28,7 +28,6 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { FlowSheet } from '~/types/flow';
 
-// --- Props Definition ---
 interface SheetTabsProps {
   sheets: FlowSheet[];
   activeSheetId: string;
@@ -40,7 +39,6 @@ interface SheetTabsProps {
   readOnly?: boolean;
 }
 
-// --- Sortable Item Component ---
 interface SortableTabItemProps
   extends Omit<SheetTabsProps, 'sheets' | 'onAdd' | 'onReorder'> {
   sheet: FlowSheet;
@@ -66,7 +64,7 @@ const SortableTabItem = ({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 50 : 'auto', // ドラッグ中は最前面に
+    zIndex: isDragging ? 50 : 'auto',
     position: 'relative' as const,
   };
 
@@ -103,9 +101,7 @@ const SortableTabItem = ({
         isDragging && 'opacity-50',
       )}
       onClick={() => !isActive && onSwitch(sheet.id)}
-      onKeyUp={() => !isActive && onSwitch(sheet.id)}
     >
-      {/* Name or Input */}
       {editingId === sheet.id ? (
         <Input
           className="h-6 w-full px-1 py-0 text-xs bg-background"
@@ -114,8 +110,8 @@ const SortableTabItem = ({
           onBlur={finishEditing}
           onKeyDown={(e) => e.key === 'Enter' && finishEditing()}
           autoFocus
-          onClick={(e) => e.stopPropagation()} // ドラッグ開始を防ぐ
-          onPointerDown={(e) => e.stopPropagation()} // DndKitのセンサー回避
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
         />
       ) : (
         <span
@@ -127,7 +123,6 @@ const SortableTabItem = ({
         </span>
       )}
 
-      {/* Menu (Rename / Delete) */}
       {!readOnly && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -137,7 +132,6 @@ const SortableTabItem = ({
                 'opacity-0 group-hover:opacity-100 p-0.5 rounded-sm hover:bg-muted-foreground/20',
                 isActive && 'opacity-100',
               )}
-              // メニューを開くクリックがドラッグとして認識されないようにする
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
@@ -164,7 +158,6 @@ const SortableTabItem = ({
   );
 };
 
-// --- Main Container Component ---
 export const SheetTabs = ({
   sheets,
   activeSheetId,
@@ -175,13 +168,8 @@ export const SheetTabs = ({
   onReorder,
   readOnly = false,
 }: SheetTabsProps) => {
-  // センサー設定: クリックとドラッグを区別するため、5px以上動いた時だけドラッグとみなす
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
@@ -189,11 +177,9 @@ export const SheetTabs = ({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-
     if (over && active.id !== over.id) {
       const oldIndex = sheets.findIndex((s) => s.id === active.id);
       const newIndex = sheets.findIndex((s) => s.id === over.id);
-      // 配列を並べ替えて親に通知
       onReorder(arrayMove(sheets, oldIndex, newIndex));
     }
   };
@@ -223,7 +209,6 @@ export const SheetTabs = ({
         </SortableContext>
       </DndContext>
 
-      {/* Add Button */}
       {!readOnly && (
         <Button
           variant="ghost"
