@@ -1,4 +1,14 @@
-import type { FlowGraphData, FlowMeta, Role } from '~/types/flow';
+import type {
+  ApproveFlowResult,
+  FlowDetailData,
+  FlowGraphData,
+  FlowListData,
+  FlowMeta,
+  PermissionRow,
+  Role,
+  SaveDraftResult,
+  StatusUpdateResult,
+} from '~/types/flow';
 
 export interface WebAppParams<T extends string = string>
   extends GoogleAppsScript.Events.DoGet {
@@ -29,3 +39,28 @@ export interface FlowLoadResponse {
   /** 最新バージョンID (編集中ドラフトID または 公開ID) */
   activeVersionId: string;
 }
+
+// ▼ 追加: 権限関連のレスポンス
+export interface PermissionListResult {
+  permissions: PermissionRow[];
+}
+
+export interface PermissionUpdateResult {
+  permission: PermissionRow;
+}
+
+export interface PermissionDeleteResult {
+  success: true;
+}
+
+// --- Type Aliases for Client Usage ---
+// クライアント側で `ApiResponse<FlowDetailResponse>` のように使うためのエイリアス
+export type FlowDetailResponse = ApiResponse<FlowDetailData>;
+export type FlowListResponse = ApiResponse<FlowListData>;
+export type SearchFlowsResponse = ApiResponse<FlowListResponse>;
+export type SaveDraftResponse = ApiResponse<SaveDraftResult>;
+export type ApproveFlowResponse = ApiResponse<ApproveFlowResult>;
+export type StatusUpdateResponse = ApiResponse<StatusUpdateResult>;
+export type PermissionListResponse = ApiResponse<PermissionListResult>;
+export type PermissionUpdateResponse = ApiResponse<PermissionUpdateResult>;
+export type PermissionDeleteResponse = ApiResponse<PermissionDeleteResult>;

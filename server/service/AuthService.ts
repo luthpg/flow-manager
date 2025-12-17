@@ -115,4 +115,70 @@ export class AuthService {
       );
     }
   }
+
+  /**
+   * フォルダの権限一覧を取得
+   */
+  getPermissions(folderId: string): PermissionRow[] {
+    const permissions = this.db.getData<PermissionRow>(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+    );
+    return permissions.filter((p) => p.folderId === folderId);
+  }
+
+  /**
+   * 権限を追加
+   */
+  addPermission(folderId: string, email: string, role: Role): PermissionRow {
+    // 重複チェック
+    const current = this.getPermissions(folderId);
+    const exists = current.find((p) => p.subjectEmail === email);
+    if (exists) {
+      throw new Error(`User ${email} already has permission.`);
+    }
+
+    const newPermission: PermissionRow = {
+      permissionId: Utilities.getUuid(),
+      folderId,
+      subjectEmail: email,
+      role,
+    };
+
+    this.db.insert(SHEET_NAMES.FOLDER_PERMISSIONS, newPermission);
+    return newPermission;
+  }
+
+  /**
+   * 権限を更新
+   */
+  updatePermission(permissionId: string, role: Role): PermissionRow {
+    // SheetDB.update は (sheetName, keyCol, keyVal, data)
+    this.db.update(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+      'permissionId',
+      permissionId,
+      {
+        role,
+      },
+    );
+
+    // 更新後のデータを返すために再取得（簡易実装）
+    const permissions = this.db.getData<PermissionRow>(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+    );
+    const updated = permissions.find((p) => p.permissionId === permissionId);
+    if (!updated) throw new Error('Permission not found after update');
+    return updated;
+  }
+
+  /**
+   * 権限を削除
+   */
+  removePermission(permissionId: string): void {
+    this.db.delete(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+      'permissionId',
+      permissionId,
+    );
+  }
 }

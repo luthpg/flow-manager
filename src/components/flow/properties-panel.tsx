@@ -19,15 +19,14 @@ const LANE_COLORS = [
 ];
 
 export const PropertiesPanel = () => {
+  // Storeからアクション関数を直接取得（useShallowの外で取得することで安定した参照を保つ）
+  const setNodes = useFlowStore((state) => state.setNodes);
+  const setEdges = useFlowStore((state) => state.setEdges);
+  const takeSnapshot = useFlowStore((state) => state.takeSnapshot);
+
   // Storeから選択中のノード情報を取得
   // アクティブシート内のノードから selected: true なものを探す
-  const {
-    selectedNode,
-    selectedEdge,
-    updateNodeData,
-    updateEdgeLabel,
-    takeSnapshot,
-  } = useFlowStore(
+  const { selectedNode, selectedEdge, activeSheet } = useFlowStore(
     useShallow((state) => {
       const activeSheet = state.sheets.find(
         (s) => s.id === state.activeSheetId,
@@ -38,41 +37,40 @@ export const PropertiesPanel = () => {
       return {
         selectedNode: sNode,
         selectedEdge: sEdge,
-        updateNodeData: (key: string, val: any) => {
-          // ストアのアクションとして定義するか、setNodesで更新する
-          // ここではStoreに直接ロジックを書かずに、setNodesを使って更新する関数を即席で作る例
-          // ★本来は store/flow-store.ts に `updateNodeData` アクションを作るべきですが
-          // setNodesを使って実装することも可能です。
-          if (!activeSheet || !sNode) return;
-          const newNodes = activeSheet.nodes.map((n) =>
-            n.id === sNode.id ? { ...n, data: { ...n.data, [key]: val } } : n,
-          );
-          state.setNodes(newNodes);
-        },
-        updateEdgeLabel: (label: string) => {
-          if (!activeSheet || !sEdge) return;
-          const newEdges = activeSheet.edges.map((e) =>
-            e.id === sEdge.id
-              ? {
-                  ...e,
-                  label,
-                  labelStyle: {
-                    fill: 'currentColor',
-                    fontWeight: 500,
-                    fontSize: 12,
-                  },
-                  labelBgStyle: { fill: 'var(--background)', fillOpacity: 0.9 },
-                  labelBgPadding: [8, 4] as [number, number],
-                  labelBgBorderRadius: 4,
-                }
-              : e,
-          );
-          state.setEdges(newEdges);
-        },
-        takeSnapshot: state.takeSnapshot,
+        activeSheet,
       };
     }),
   );
+
+  // 関数をuseShallowの外で定義することで、毎回新しい参照が作成されることを防ぐ
+  const updateNodeData = (key: string, val: any) => {
+    if (!activeSheet || !selectedNode) return;
+    const newNodes = activeSheet.nodes.map((n) =>
+      n.id === selectedNode.id ? { ...n, data: { ...n.data, [key]: val } } : n,
+    );
+    setNodes(newNodes);
+  };
+
+  const updateEdgeLabel = (label: string) => {
+    if (!activeSheet || !selectedEdge) return;
+    const newEdges = activeSheet.edges.map((e) =>
+      e.id === selectedEdge.id
+        ? {
+            ...e,
+            label,
+            labelStyle: {
+              fill: 'currentColor',
+              fontWeight: 500,
+              fontSize: 12,
+            },
+            labelBgStyle: { fill: 'var(--background)', fillOpacity: 0.9 },
+            labelBgPadding: [8, 4] as [number, number],
+            labelBgBorderRadius: 4,
+          }
+        : e,
+    );
+    setEdges(newEdges);
+  };
 
   if (selectedNode) {
     const data = selectedNode.data as any;

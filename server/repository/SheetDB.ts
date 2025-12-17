@@ -116,4 +116,27 @@ export class SheetDB {
       }
     }
   }
+
+  /**
+   * 条件に一致する行を削除
+   */
+  delete(sheetName: string, keyColumn: string, keyValue: string): void {
+    const sheet = this.ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error(`Sheet "${sheetName}" not found`);
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return;
+
+    const headers = data[0] as string[];
+    const keyIndex = headers.indexOf(keyColumn);
+
+    if (keyIndex === -1) throw new Error(`Column "${keyColumn}" not found`);
+
+    // 下からループして削除（行ズレ防止）
+    for (let i = data.length - 1; i > 0; i--) {
+      if (String(data[i][keyIndex]) === String(keyValue)) {
+        sheet.deleteRow(i + 1); // 1-based index
+      }
+    }
+  }
 }

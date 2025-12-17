@@ -171,10 +171,24 @@ const mockup: PartialScriptType<ServerScripts> = {
     return mockResponse(response);
   },
 
-  generateUUID: () => crypto.randomUUID(),
-  getDateString: () => new Date().toISOString().split('T')[0].replace(/-/g, ''),
-  generateDraftVersionId: () => `draft-mock-${Date.now()}`,
-  generateReleaseVersionId: () => `rel-${Date.now()}`,
+  generateUUID: async () => crypto.randomUUID(),
+  getDateString: async () =>
+    new Date().toISOString().split('T')[0].replace(/-/g, ''),
+  generateDraftVersionId: async () => `draft-mock-${Date.now()}`,
+  generateReleaseVersionId: async () => `rel-${Date.now()}`,
+  getFolderPermissions: async () => {
+    return mockResponse({
+      canCreate: true,
+      canRead: true,
+      canUpdate: true,
+      canDelete: true,
+    });
+  },
+  addFolderPermission: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const response: StatusUpdateResponse = { status: 'PENDING' };
+    return mockResponse(response);
+  },
 };
 
 export const serverScripts = getPromisedServerScripts<ServerScripts>(mockup);

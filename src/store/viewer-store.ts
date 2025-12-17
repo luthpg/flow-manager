@@ -9,7 +9,7 @@ import {
 } from '@/lib/diff-utils';
 import { serverScripts } from '@/lib/server';
 import type { ApiResponse } from '~/types/appsscript/server';
-import type { FlowData, FlowMeta, FlowSheet, Role } from '~/types/flow';
+import type { FlowMeta, FlowSheet, Role } from '~/types/flow';
 
 // History Item Type (Internal)
 export interface HistoryItem {

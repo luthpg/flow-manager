@@ -1,5 +1,5 @@
 import { Loader2, Menu } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { DashboardHeader } from '@/components/dashboard/dashboard-header';
 import { FlowCard } from '@/components/dashboard/flow-card';
@@ -9,19 +9,80 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useDashboardStore } from '@/store/dashboard-store';
 
 export default function Dashboard() {
-  const { loading, fetchDashboardData, filteredFlows, selectedFolderName } =
-    useDashboardStore(
-      useShallow((state) => ({
-        loading: state.loading,
-        fetchDashboardData: state.fetchDashboardData,
-        filteredFlows: state.getFilteredFlows(),
-        selectedFolderName: state.getSelectedFolderName(),
-      })),
-    );
+  // セレクター内での関数呼び出し（getFilteredFlowsなど）は毎回新しい配列を返すため
+  // 無限ループの原因となります。ここではStateを直接取得し、コンポーネント内で計算します。
+  const {
+    loading,
+    fetchDashboardData,
+    flows,
+    folders,
+    searchTerm,
+    statusFilter,
+    selectedFolderId,
+    isAdvancedSearching,
+  } = useDashboardStore(
+    useShallow((state) => ({
+      loading: state.loading,
+      fetchDashboardData: state.fetchDashboardData,
+      flows: state.flows,
+      folders: state.folders,
+      searchTerm: state.searchTerm,
+      statusFilter: state.statusFilter,
+      selectedFolderId: state.selectedFolderId,
+      isAdvancedSearching: state.isAdvancedSearching,
+    })),
+  );
 
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
+
+  // フィルタリングロジックをコンポーネント側の useMemo に移動
+  const filteredFlows = useMemo(() => {
+    return flows.filter((flow) => {
+      // 1. Folder Filter
+      if (selectedFolderId !== 'ALL' && flow.folderId !== selectedFolderId) {
+        return false;
+      }
+
+      // 2. Status Filter
+      if (statusFilter !== 'ALL' && flow.currentStatus !== statusFilter) {
+        return false;
+      }
+
+      // 3. Quick Search (Enhanced)
+      if (searchTerm) {
+        const lowerTerm = searchTerm.toLowerCase();
+
+        // A. フロー名
+        if (flow.title.toLowerCase().includes(lowerTerm)) return true;
+
+        // B. フォルダ名
+        const folderName =
+          folders.find((f) => f.id === flow.folderId)?.name || '';
+        if (folderName.toLowerCase().includes(lowerTerm)) return true;
+
+        // C. バージョン名 (ID)
+        const hasVersionMatch = flow.versions.some((v) =>
+          v.versionId.toLowerCase().includes(lowerTerm),
+        );
+        if (hasVersionMatch) return true;
+
+        return false; // マッチしなければ除外
+      }
+
+      return true;
+    });
+  }, [flows, folders, searchTerm, statusFilter, selectedFolderId]);
+
+  // フォルダ名の解決も useMemo で行う
+  const selectedFolderName = useMemo(() => {
+    if (isAdvancedSearching) return 'Search Results';
+    if (selectedFolderId === 'ALL') return 'All Flows';
+    return (
+      folders.find((f) => f.id === selectedFolderId)?.name || 'Unknown Folder'
+    );
+  }, [selectedFolderId, folders, isAdvancedSearching]);
 
   return (
     <div className="flex flex-col h-screen bg-background font-sans text-foreground">

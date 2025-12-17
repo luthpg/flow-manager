@@ -4,40 +4,26 @@
 export type ServerScripts = {
   /**
    * ダッシュボード用データ取得
-   * 返却型: FlowListResponse
    */
   getFlows(): string;
 
   /**
-   * 編集画面・閲覧画面データ取得
-   * - 必須: flowId, versionId
+   * 詳細データ取得
    */
   getFlowData(flowId: string, versionId: string): string;
 
-  /**
-   * 下書き保存
-   * - 権限: EDITOR以上
-   */
   saveDraft(payload: {
     flowId: string;
     title: string;
     graphData: object;
   }): string;
 
-  /**
-   * 承認申請
-   * - 権限: EDITOR以上
-   */
   submitFlow(payload: {
     flowId: string;
     versionId: string;
     comment: string;
   }): string;
 
-  /**
-   * 承認実行 (Approve)
-   * - 権限: APPROVER以上
-   */
   approveFlow(payload: {
     flowId: string;
     versionId: string;
@@ -45,15 +31,43 @@ export type ServerScripts = {
     graphData?: object;
   }): string;
 
-  /**
-   * 否認実行 (Reject)
-   * - 権限: APPROVER以上
-   */
   rejectFlow(payload: {
     flowId: string;
     versionId: string;
     comment: string;
   }): string;
+
+  /**
+   * フォルダ権限取得
+   */
+  getFolderPermissions(folderId: string): string;
+
+  /**
+   * 権限追加
+   */
+  addFolderPermission(payload: {
+    folderId: string;
+    email: string;
+    role: string;
+  }): string;
+
+  /**
+   * 権限更新
+   */
+  updateFolderPermission(payload: {
+    permissionId: string;
+    role: string;
+  }): string;
+
+  /**
+   * 権限削除
+   */
+  removeFolderPermission(payload: { permissionId: string }): string;
+
+  /**
+   * 詳細検索
+   */
+  searchFlows(payload: AdvancedSearchQuery): string;
 
   generateUUID(): string;
 
@@ -62,7 +76,7 @@ export type ServerScripts = {
   generateDraftVersionId(email: string): string;
 
   generateReleaseVersionId(existingVersions: string[]): string;
-};
+}
 
 // Auto-generated Types for GoogleAppsScript in client-side code
 

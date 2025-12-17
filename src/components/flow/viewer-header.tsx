@@ -5,11 +5,13 @@ import {
   Diff,
   Loader2,
   Pencil,
+  Share2,
   XCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
+import { ShareDialog } from '@/components/dashboard/share-dialog';
 import { ModeToggle } from '@/components/mode-toggle';
 import { useTheme } from '@/components/theme-provider';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +35,7 @@ export function ViewerHeader() {
   const { isMobile } = useIsMobile();
   const [comment, setComment] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   const {
     meta,
@@ -117,7 +120,20 @@ export function ViewerHeader() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Share Button */}
+        {meta?.folderId && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsShareOpen(true)}
+            title="Share Folder"
+          >
+            <Share2 className="w-5 h-5" />
+          </Button>
+        )}
+
         <ModeToggle />
+
         {canEdit && (
           <Button
             variant="outline"
@@ -197,6 +213,16 @@ export function ViewerHeader() {
           </div>
         )}
       </div>
+
+      {/* Share Dialog */}
+      {meta?.folderId && (
+        <ShareDialog
+          open={isShareOpen}
+          onOpenChange={setIsShareOpen}
+          folderId={meta.folderId}
+          folderName="Parent Folder" // 簡易表示（必要ならAPIからフォルダ名を取得して渡す）
+        />
+      )}
     </header>
   );
 }

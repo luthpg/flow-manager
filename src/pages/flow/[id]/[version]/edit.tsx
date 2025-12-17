@@ -2,7 +2,9 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  type Edge,
   MiniMap,
+  type Node,
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
@@ -10,12 +12,12 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useNavigate, useParams } from '@ciderjs/city-gas/react';
-import { ArrowLeft, Save, Send, Wand2 } from 'lucide-react';
+import { ArrowLeft, Save, Send, Share2, Wand2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 
-// Custom Components
+// Components
 import {
   BpmnAnnotationNode,
   BpmnArrowNode,
@@ -30,8 +32,10 @@ import {
   BpmnTaskNode,
   BpmnTimerEventNode,
 } from '@/components/custom-nodes';
+import { ShareDialog } from '@/components/dashboard/share-dialog';
 import { FlowPalette } from '@/components/flow/palette';
 import { PropertiesPanel } from '@/components/flow/properties-panel';
+import { ValidationPanel } from '@/components/flow/validation-panel'; // Import
 import { ModeToggle } from '@/components/mode-toggle';
 import { SheetTabs } from '@/components/sheet-tabs';
 import { Badge } from '@/components/ui/badge';
@@ -39,14 +43,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 
-import { autoFormatGraph, validateBPMN } from '@/lib/bpmn-logic';
+import { getLayoutedElements } from '@/lib/auto-layout'; // Import Auto Layout
+import { type ValidationIssue, validateFlow } from '@/lib/bpmn-validator'; // Import Validator
 import { GRID_SIZE, OFFSET_Y, SLOT_HEIGHT, SLOT_WIDTH } from '@/lib/constants';
 import { serverScripts } from '@/lib/server';
 import { useFlowStore } from '@/store/flow-store';
-import type { ApiResponse } from '~/types/appsscript/server';
-import type { FlowData, FlowStatus } from '~/types/flow';
+import type {
+  FlowDetailResponse,
+  SaveDraftResponse,
+  StatusUpdateResponse,
+} from '~/types/appsscript/server';
+import type { FlowStatus } from '~/types/flow';
 
-// Helper: Snap to Slot Logic
+// ... (snapToSlot helper) ...
 const snapToSlot = (x: number, y: number, type: string) => {
   if (type === 'bpmnSwimlane' || type === 'bpmnArrow') {
     return {
@@ -60,7 +69,6 @@ const snapToSlot = (x: number, y: number, type: string) => {
       y: Math.round(y / GRID_SIZE) * GRID_SIZE,
     };
   }
-  // Standard Nodes (Center of Slot)
   const isWide = [
     'bpmnTask',
     'bpmnMessaging',
@@ -86,12 +94,15 @@ export default function FlowEditorPage() {
   );
 }
 
+// 無限ループ回避のための固定参照の空配列
+const EMPTY_NODES: Node[] = [];
+const EMPTY_EDGES: Edge[] = [];
+
 function FlowEditorContent({ id, version }: { id: string; version: string }) {
   const navigate = useNavigate();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, deleteElements } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
 
-  // --- Store Selectors ---
   const {
     sheets,
     activeSheetId,
@@ -119,8 +130,8 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
       return {
         sheets: state.sheets,
         activeSheetId: state.activeSheetId,
-        nodes: activeSheet?.nodes || [],
-        edges: activeSheet?.edges || [],
+        nodes: activeSheet?.nodes || EMPTY_NODES,
+        edges: activeSheet?.edges || EMPTY_EDGES,
         initializeFlow: state.initializeFlow,
         setActiveSheetId: state.setActiveSheetId,
         addSheet: state.addSheet,
@@ -142,8 +153,14 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
   const [loading, setLoading] = useState(true);
   const [flowTitle, setFlowTitle] = useState('');
   const [flowStatus, setFlowStatus] = useState<FlowStatus>('DRAFT');
+  const [folderId, setFolderId] = useState<string | null>(null);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
-  // --- Node Types Definition ---
+  // Validation State
+  const [validationIssues, setValidationIssues] = useState<
+    ValidationIssue[] | null
+  >(null);
+
   const nodeTypes = useMemo(
     () => ({
       bpmnTask: BpmnTaskNode,
@@ -162,21 +179,21 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
     [],
   );
 
-  // --- Initialization ---
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
         const json = await serverScripts.getFlowData(id, version);
-        const res = JSON.parse(json) as ApiResponse<FlowData>;
+        const res = JSON.parse(json) as FlowDetailResponse;
         if (res.success && res.data) {
           setFlowTitle(res.data.meta.title);
           setFlowStatus(res.data.meta.currentStatus);
+          setFolderId(res.data.meta.folderId);
           initializeFlow(res.data.graphData);
         } else {
           toast.error('Failed to load flow');
         }
-      } catch (_e) {
+      } catch (e) {
         toast.error('Connection error');
       } finally {
         setLoading(false);
@@ -216,7 +233,6 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
       const { x, y } = snapToSlot(position.x, position.y, type);
       takeSnapshot();
 
-      // Node Data construction
       const nodeData: any = { label };
       let initialStyle = {};
 
@@ -259,6 +275,7 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  // ... (handleSave, handleSubmit same as before) ...
   const handleSave = async () => {
     const currentState = useFlowStore.getState();
     const promise = async () => {
@@ -270,9 +287,9 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
           activeSheetId: currentState.activeSheetId,
         },
       });
-      const res = JSON.parse(json);
+      const res = JSON.parse(json) as SaveDraftResponse;
       if (!res.success) throw new Error(res.error);
-      if (res.data.versionId !== version) {
+      if (res.data && res.data.versionId !== version) {
         navigate(
           '/flow/[id]/[version]/edit',
           { id, version: res.data.versionId },
@@ -287,18 +304,54 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
     });
   };
 
-  const handleFormat = () => {
-    const formatted = autoFormatGraph(nodes);
-    setNodes(formatted);
-    const result = validateBPMN(formatted, edges);
-    if (result.isValid) toast.success('Formatted & Validated');
-    else
-      toast.warning('Warnings found', {
-        description: result.messages.join('\n'),
+  const handleSubmit = async () => {
+    const promise = async () => {
+      const json = await serverScripts.submitFlow({
+        flowId: id,
+        versionId: version,
+        comment: 'Submitted from Editor',
       });
+      const res = JSON.parse(json) as StatusUpdateResponse;
+      if (!res.success) throw new Error(res.error);
+      setFlowStatus('PENDING');
+    };
+    toast.promise(promise(), {
+      loading: 'Submitting...',
+      success: 'Flow submitted',
+      error: 'Submit failed',
+    });
   };
 
-  // Keyboard Shortcuts
+  // ▼ Lintfix & Auto Layout
+  const handleLintFix = () => {
+    takeSnapshot(); // 変更前に保存
+
+    // 1. 自動レイアウト適用 (Dagre)
+    const layoutedNodes = getLayoutedElements(nodes, edges, {
+      direction: 'LR',
+    });
+    setNodes(layoutedNodes);
+
+    // 2. バリデーション実行
+    const result = validateFlow(layoutedNodes, edges);
+    setValidationIssues(result.issues);
+
+    if (result.isValid) {
+      toast.success('Formatted & Validated', {
+        description: 'No issues found.',
+      });
+    } else {
+      toast.warning(`${result.issues.length} problems found`, {
+        description: 'Please check the panel below.',
+        duration: 4000,
+      });
+    }
+
+    // 3. 全体が見えるようにズーム
+    setTimeout(() => fitView({ padding: 0.2 }), 50);
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ignore function
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -313,7 +366,7 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, handleSave]);
+  }, [undo, redo]);
 
   if (loading)
     return (
@@ -324,7 +377,6 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
-      {/* Header */}
       <header className="h-16 border-b flex items-center justify-between px-4 bg-background z-20">
         <div className="flex items-center gap-4">
           <Button
@@ -348,20 +400,34 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {folderId && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsShareOpen(true)}
+              title="Share"
+            >
+              <Share2 className="w-5 h-5" />
+            </Button>
+          )}
+          <Separator orientation="vertical" className="h-6" />
           <Button variant="ghost" size="icon" onClick={undo} title="Undo">
             <span className="text-lg">↩</span>
           </Button>
           <Button variant="ghost" size="icon" onClick={redo} title="Redo">
             <span className="text-lg">↪</span>
           </Button>
+
+          {/* Lintfix Button */}
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleFormat}
-            title="Auto Format"
+            onClick={handleLintFix}
+            title="Auto Layout & Fix"
           >
             <Wand2 className="w-5 h-5" />
           </Button>
+
           <Separator orientation="vertical" className="h-6" />
           <ModeToggle />
           <Button
@@ -375,18 +441,15 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
           <Button
             size="sm"
             className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={handleSubmit}
           >
             <Send className="w-4 h-4" /> Submit
           </Button>
         </div>
       </header>
 
-      {/* Main Workspace */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Left Palette */}
         <FlowPalette onDragStart={onDragStart} />
-
-        {/* Center Canvas */}
         <main
           className="flex-1 flex flex-col relative bg-muted/20"
           ref={reactFlowWrapper}
@@ -422,11 +485,26 @@ function FlowEditorContent({ id, version }: { id: string; version: string }) {
             onRename={renameSheet}
             onReorder={reorderSheets}
           />
-        </main>
 
-        {/* Right Properties Panel */}
+          {/* Validation Panel Overlay */}
+          {validationIssues && (
+            <ValidationPanel
+              issues={validationIssues}
+              onClose={() => setValidationIssues(null)}
+            />
+          )}
+        </main>
         <PropertiesPanel />
       </div>
+
+      {folderId && (
+        <ShareDialog
+          open={isShareOpen}
+          onOpenChange={setIsShareOpen}
+          folderId={folderId}
+          folderName="Parent Folder"
+        />
+      )}
     </div>
   );
 }

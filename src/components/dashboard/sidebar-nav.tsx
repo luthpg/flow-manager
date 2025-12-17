@@ -1,6 +1,14 @@
-import { Folder, FolderOpen, Layers } from 'lucide-react';
+import { Folder, FolderOpen, Layers, Share2 } from 'lucide-react';
+import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { ShareDialog } from '@/components/dashboard/share-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
 import { useDashboardStore } from '@/store/dashboard-store';
 
@@ -12,6 +20,11 @@ export function SidebarNav() {
       setSelectedFolderId: state.setSelectedFolderId,
     })),
   );
+
+  const [shareConfig, setShareConfig] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   return (
     <nav className="w-64 flex flex-col gap-2 p-4 border-r bg-background/50 h-full overflow-y-auto">
@@ -39,35 +52,51 @@ export function SidebarNav() {
         </h2>
       </div>
 
-      {folders.length === 0 ? (
-        <div className="text-sm text-muted-foreground px-4 py-2 italic">
-          No folders found
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1">
-          {folders.map((folder) => {
-            const isSelected = selectedFolderId === folder.id;
-            return (
-              <Button
-                key={folder.id}
-                variant={isSelected ? 'secondary' : 'ghost'}
-                className={cn(
-                  'justify-start gap-2 truncate',
-                  isSelected && 'font-bold',
-                )}
-                onClick={() => setSelectedFolderId(folder.id)}
-                title={folder.name}
-              >
-                {isSelected ? (
-                  <FolderOpen className="w-4 h-4 text-blue-500" />
-                ) : (
-                  <Folder className="w-4 h-4 text-muted-foreground" />
-                )}
-                <span className="truncate">{folder.name}</span>
-              </Button>
-            );
-          })}
-        </div>
+      <div className="flex flex-col gap-1">
+        {folders.map((folder) => {
+          const isSelected = selectedFolderId === folder.id;
+          return (
+            <ContextMenu key={folder.id}>
+              <ContextMenuTrigger>
+                <Button
+                  variant={isSelected ? 'secondary' : 'ghost'}
+                  className={cn(
+                    'w-full justify-start gap-2 truncate',
+                    isSelected && 'font-bold',
+                  )}
+                  onClick={() => setSelectedFolderId(folder.id)}
+                  title={folder.name}
+                >
+                  {isSelected ? (
+                    <FolderOpen className="w-4 h-4 text-blue-500" />
+                  ) : (
+                    <Folder className="w-4 h-4 text-muted-foreground" />
+                  )}
+                  <span className="truncate">{folder.name}</span>
+                </Button>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem
+                  onClick={() =>
+                    setShareConfig({ id: folder.id, name: folder.name })
+                  }
+                >
+                  <Share2 className="w-4 h-4 mr-2" /> Share
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          );
+        })}
+      </div>
+
+      {/* Share Dialog Instance */}
+      {shareConfig && (
+        <ShareDialog
+          open={!!shareConfig}
+          onOpenChange={(open) => !open && setShareConfig(null)}
+          folderId={shareConfig.id}
+          folderName={shareConfig.name}
+        />
       )}
     </nav>
   );
