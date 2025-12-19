@@ -993,7 +993,7 @@ function FlowEditorContent({
         folderId,
         flowId: id,
         versionId: version,
-        activVersionId: version, // ＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊仮定義
+        activeVersionId: version, // ＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊仮定義
         title: flowTitle,
         currentStatus: flowStatus,
         updatedAt: new Date().toISOString(),

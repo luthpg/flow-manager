@@ -1,3 +1,9 @@
+import type {
+  FlowData,
+  FlowGraphData,
+  FlowMeta,
+  Role,
+} from '~/types/flow';
 import { AuthService } from './service/AuthService';
 import { FlowService } from './service/FlowService';
 import { response } from './utils/response';
@@ -9,12 +15,12 @@ const authService = new AuthService();
  * ダッシュボード用: フロー一覧取得
  * - 権限: ログインユーザーに関連するフォルダのフローのみ
  */
-export function getFlows() {
+export function getFlows(): string {
   try {
     const email = Session.getActiveUser().getEmail();
 
     // サービス層で権限フィルタリング済みのリストを取得
-    const flows = flowService.getFlowList(email);
+    const flows: FlowMeta[] = flowService.getFlowList(email);
 
     return response.success(flows);
   } catch (e) {
@@ -26,7 +32,7 @@ export function getFlows() {
  * 編集画面・閲覧画面データ取得
  * - 必須: flowId, versionId
  */
-export function getFlowData(flowId: string, versionId: string) {
+export function getFlowData(flowId: string, versionId: string): string {
   try {
     const email = Session.getActiveUser().getEmail();
 
@@ -39,7 +45,12 @@ export function getFlowData(flowId: string, versionId: string) {
     // 指定バージョンを取得
     const result = flowService.getFlowDetail(flowId, versionId);
 
-    return response.success({ ...result, userRole: role });
+    const responseData: FlowData & { userRole: Role | null } = {
+      ...result,
+      userRole: role,
+    };
+
+    return response.success(responseData);
   } catch (e) {
     return response.error(e instanceof Error ? e.message : String(e));
   }
@@ -52,8 +63,8 @@ export function getFlowData(flowId: string, versionId: string) {
 export function saveDraft(payload: {
   flowId: string;
   title: string;
-  graphData: object;
-}) {
+  graphData: FlowGraphData;
+}): string {
   try {
     const email = Session.getActiveUser().getEmail();
 
@@ -81,7 +92,7 @@ export function submitFlow(payload: {
   flowId: string;
   versionId: string;
   comment: string;
-}) {
+}): string {
   try {
     const email = Session.getActiveUser().getEmail();
 
@@ -103,8 +114,8 @@ export function approveFlow(payload: {
   flowId: string;
   versionId: string;
   comment: string;
-  graphData?: object;
-}) {
+  graphData?: FlowGraphData;
+}): string {
   try {
     const email = Session.getActiveUser().getEmail();
 
@@ -133,7 +144,7 @@ export function rejectFlow(payload: {
   flowId: string;
   versionId: string;
   comment: string;
-}) {
+}): string {
   try {
     const email = Session.getActiveUser().getEmail();
 

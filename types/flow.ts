@@ -39,7 +39,7 @@ export interface FlowGraphData {
 export interface FlowMeta {
   flowId: string;
   versionId: string;
-  activVersionId: string;
+  activeVersionId: string;
   folderId: string;
   title: string;
   currentStatus: FlowStatus;
