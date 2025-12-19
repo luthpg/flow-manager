@@ -11,15 +11,15 @@ export const ROLE_LEVELS: Record<Role, number> = {
 };
 
 export interface PermissionRow {
-  permission_id: string;
-  folder_id: string;
-  subject_email: string; // User Email or Group ID
+  permissionId: string;
+  folderId: string;
+  subjectEmail: string; // User Email or Group ID
   role: Role;
 }
 
 export interface FlowRow {
-  flow_id: string;
-  folder_id: string;
+  flowId: string;
+  folderId: string;
   // ...others
 }
 
@@ -41,14 +41,14 @@ export class AuthService {
   getRole(userEmail: string, flowId: string): Role | null {
     // 1. フローIDから親フォルダIDを特定
     const flows = this.db.getData<FlowRow>(SHEET_NAMES.FLOWS);
-    const targetFlow = flows.find((f) => f.flow_id === flowId);
+    const targetFlow = flows.find((f) => f.flowId === flowId);
 
     if (!targetFlow) {
       // フローが存在しない場合は権限なしとする
       return null;
     }
 
-    const folderId = targetFlow.folder_id;
+    const folderId = targetFlow.folderId;
 
     // 2. ユーザーの所属グループを取得
     const users = this.db.getData<UserRow>(SHEET_NAMES.SYSTEM_USERS);
@@ -69,7 +69,7 @@ export class AuthService {
 
     // 対象フォルダ かつ Subjectが一致する権限を全て抽出
     const matchedPerms = permissions.filter(
-      (p) => p.folder_id === folderId && subjects.includes(p.subject_email),
+      (p) => p.folderId === folderId && subjects.includes(p.subjectEmail),
     );
 
     if (matchedPerms.length === 0) {
@@ -113,8 +113,8 @@ export class AuthService {
 
     // 役割を問わず、レコードが存在すればアクセス可能とみなす
     const accessibleFolderIds = permissions
-      .filter((p) => subjects.includes(p.subject_email))
-      .map((p) => p.folder_id);
+      .filter((p) => subjects.includes(p.subjectEmail))
+      .map((p) => p.folderId);
 
     // 3. 重複を排除して返す
     return [...new Set(accessibleFolderIds)];
