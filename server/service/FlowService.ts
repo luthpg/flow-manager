@@ -6,13 +6,16 @@ import {
 } from '../utils/version';
 import { AuthService } from './AuthService';
 import type {
-  FlowData,
-  FlowGraphData,
   FlowMeta,
-  FlowSheet,
-  FlowStatus,
-  FlowVersionDetail,
-} from '~/types/flow';
+} from '../../types/flow';
+import {
+  type FlowRow,
+  type FlowVersionRow,
+  joinJsonChunks,
+  splitJsonData,
+  toFlowMeta,
+  toFlowVersionDetail,
+} from '../utils/data-mapper';
 
 export class FlowService {
   private db: SheetDB;
@@ -36,51 +39,52 @@ export class FlowService {
   ) {
     // 1. フローメタデータの更新
     if (title) {
-      this.db.update(SHEET_NAMES.FLOWS, 'flow_id', flowId, {
+      this.db.update(SHEET_NAMES.FLOWS, 'flowId', flowId, {
         title: title,
-        updated_at: new Date(),
+        updatedAt: new Date(),
       });
     }
 
     // 2. ドラフトIDの決定
     const targetVersionId = generateDraftVersionId(userEmail);
+    const splitData = splitJsonData(jsonData);
 
-    const versions = this.db.getData<FlowVersionDetail>(SHEET_NAMES.FLOW_VERSIONS);
+    const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
     const existingDraft = versions.find(
-      (v) => v.flow_id === flowId && v.version_id === targetVersionId,
+      (v) => v.flowId === flowId && v.versionId === targetVersionId,
     );
 
     if (existingDraft) {
       // 既存ドラフトの上書き
-      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'version_id', targetVersionId, {
-        json_data: jsonData,
-        updated_at: new Date(),
+      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'versionId', targetVersionId, {
+        ...splitData,
+        updatedAt: new Date(),
       });
       return targetVersionId;
     } else {
       // 新規ドラフト作成
-      // 最新の version_num を取得して +1 する
-      const flowVersions = versions.filter((v) => v.flow_id === flowId);
+      // 最新の versionNum を取得して +1 する
+      const flowVersions = versions.filter((v) => v.flowId === flowId);
       const maxNum =
         flowVersions.length > 0
-          ? Math.max(...flowVersions.map((v) => v.version_num))
+          ? Math.max(...flowVersions.map((v) => v.versionNum))
           : 0;
 
       this.db.insert(SHEET_NAMES.FLOW_VERSIONS, {
-        version_id: targetVersionId,
-        flow_id: flowId,
-        version_num: maxNum + 1,
+        versionId: targetVersionId,
+        flowId: flowId,
+        versionNum: maxNum + 1,
         status: 'DRAFT',
-        json_data: jsonData,
-        created_by: userEmail,
-        created_at: new Date(),
+        ...splitData,
+        createdBy: userEmail,
+        createdAt: new Date(),
         comment: '',
       });
 
       // 親ステータス更新
-      this.db.update(SHEET_NAMES.FLOWS, 'flow_id', flowId, {
-        current_status: 'DRAFT',
-        updated_at: new Date(),
+      this.db.update(SHEET_NAMES.FLOWS, 'flowId', flowId, {
+        currentStatus: 'DRAFT',
+        updatedAt: new Date(),
       });
 
       return targetVersionId;
@@ -97,9 +101,9 @@ export class FlowService {
       lock.waitLock(APP_CONFIG.LOCK_WAIT_MS);
 
       // 指定されたバージョンID (ドラフト) を取得
-      const versions = this.db.getData<FlowVersion>('Flow_Versions');
+      const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
       const target = versions.find(
-        (v) => v.version_id === versionId && v.flow_id === flowId,
+        (v) => v.versionId === versionId && v.flowId === flowId,
       );
 
       if (!target || target.status !== 'DRAFT') {
@@ -107,14 +111,14 @@ export class FlowService {
       }
 
       // ステータス更新
-      this.db.update('Flow_Versions', 'version_id', versionId, {
+      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'versionId', versionId, {
         status: 'PENDING',
         comment: comment,
       });
 
-      this.db.update(SHEET_NAMES.FLOWS, 'flow_id', flowId, {
-        current_status: 'PENDING',
-        updated_at: new Date(),
+      this.db.update(SHEET_NAMES.FLOWS, 'flowId', flowId, {
+        currentStatus: 'PENDING',
+        updatedAt: new Date(),
       });
     } catch (e) {
       throw new Error(`排他制御エラー: ${e}`);
@@ -128,26 +132,31 @@ export class FlowService {
    * - IDとバージョンIDで一意に特定して返す
    */
   getFlowDetail(flowId: string, versionId: string) {
-    const flowMeta = this.db
-      .getData<FlowMeta>(SHEET_NAMES.FLOWS)
-      .find((f) => f.flow_id === flowId);
+    const flows = this.db.getData<FlowRow>(SHEET_NAMES.FLOWS);
+    const flowRow = flows.find((f) => f.flowId === flowId);
 
-    if (!flowMeta) throw new Error('Flow not found');
+    if (!flowRow) throw new Error('Flow not found');
 
-    const versions = this.db.getData<FlowVersion>(SHEET_NAMES.FLOW_VERSIONS);
-    const targetVersion = versions.find(
-      (v) => v.flow_id === flowId && v.version_id === versionId,
+    const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
+    const targetVersionRow = versions.find(
+      (v) => v.flowId === flowId && v.versionId === versionId,
     );
 
-    if (!targetVersion) {
-      // 指定バージョンがない場合、かつEditorでない場合
+    if (!targetVersionRow) {
+      // 指定バージョンがない場合
       throw new Error(`Version ${versionId} not found for Flow ${flowId}`);
     }
 
+    const flowMeta = toFlowMeta(flowRow);
+    const versionDetail = toFlowVersionDetail(targetVersionRow);
+    
+    // JSON結合
+    const jsonString = joinJsonChunks(targetVersionRow);
+
     return {
       meta: flowMeta,
-      version: targetVersion,
-      graphData: JSON.parse(targetVersion.json_data),
+      version: versionDetail,
+      graphData: JSON.parse(jsonString),
     };
   }
 
@@ -167,21 +176,29 @@ export class FlowService {
     try {
       lock.waitLock(APP_CONFIG.LOCK_WAIT_MS);
 
+      let updateData: Record<string, any> = {
+        updatedAt: new Date(),
+      };
+
       if (graphData) {
-        this.db.update(
+        const jsonString = JSON.stringify(graphData);
+        const splitData = splitJsonData(jsonString);
+        updateData = { ...updateData, ...splitData };
+      }
+
+      // まず更新データを適用 (グラフデータがある場合)
+      if (Object.keys(updateData).length > 1) { // updatedAt以外がある場合
+         this.db.update(
           SHEET_NAMES.FLOW_VERSIONS,
-          'version_id',
+          'versionId',
           currentVersionId,
-          {
-            json_data: JSON.stringify(graphData),
-            updated_at: new Date(),
-          },
+          updateData,
         );
       }
 
-      const versions = this.db.getData<FlowVersion>(SHEET_NAMES.FLOW_VERSIONS);
+      const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
       const targetVersion = versions.find(
-        (v) => v.version_id === currentVersionId,
+        (v) => v.versionId === currentVersionId,
       );
 
       if (!targetVersion) throw new Error('Target version not found.');
@@ -193,8 +210,8 @@ export class FlowService {
 
       // 新しいリリースIDの生成
       const existingIds = versions
-        .filter((v) => v.flow_id === flowId)
-        .map((v) => v.version_id);
+        .filter((v) => v.flowId === flowId)
+        .map((v) => v.versionId);
 
       const newVersionId = generateReleaseVersionId(existingIds);
 
@@ -202,23 +219,24 @@ export class FlowService {
         ? `${targetVersion.comment}\n\n[Approved by ${approverEmail}]: ${comment}`
         : `[Approved by ${approverEmail}]: ${comment}`;
 
+      // ID書き換えとステータス更新
       this.db.update(
         SHEET_NAMES.FLOW_VERSIONS,
-        'version_id',
+        'versionId',
         currentVersionId,
         {
-          version_id: newVersionId,
+          versionId: newVersionId,
           status: 'PUBLISHED',
           comment: newComment,
-          updated_at: new Date(),
+          updatedAt: new Date(),
         },
       );
 
       // 親情報の更新
-      this.db.update(SHEET_NAMES.FLOWS, 'flow_id', flowId, {
-        current_status: 'PUBLISHED',
-        active_version_id: newVersionId,
-        updated_at: new Date(),
+      this.db.update(SHEET_NAMES.FLOWS, 'flowId', flowId, {
+        currentStatus: 'PUBLISHED',
+        activeVersionId: newVersionId,
+        updatedAt: new Date(),
       });
 
       return newVersionId;
@@ -245,8 +263,8 @@ export class FlowService {
       lock.waitLock(APP_CONFIG.LOCK_WAIT_MS);
 
       // 1. 対象バージョンの確認
-      const versions = this.db.getData<FlowVersion>('Flow_Versions');
-      const targetVersion = versions.find((v) => v.version_id === versionId);
+      const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
+      const targetVersion = versions.find((v) => v.versionId === versionId);
 
       if (!targetVersion) throw new Error('Target version not found.');
       if (targetVersion.status !== 'PENDING') {
@@ -260,18 +278,16 @@ export class FlowService {
         ? `${targetVersion.comment}\n\n[Rejected by ${rejecterEmail}]: ${comment}`
         : `[Rejected by ${rejecterEmail}]: ${comment}`;
 
-      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'version_id', versionId, {
+      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'versionId', versionId, {
         status: 'REJECTED',
         comment: newComment,
-        updated_at: new Date(),
+        updatedAt: new Date(),
       });
 
       // 3. フロー親情報の更新
-      // active_version_id は更新しない（以前の公開版を維持するため）
-      // current_status は REJECTED にして、ダッシュボード等でわかるようにする
-      this.db.update(SHEET_NAMES.FLOWS, 'flow_id', flowId, {
-        current_status: 'REJECTED',
-        updated_at: new Date(),
+      this.db.update(SHEET_NAMES.FLOWS, 'flowId', flowId, {
+        currentStatus: 'REJECTED',
+        updatedAt: new Date(),
       });
     } catch (e) {
       throw new Error(`Rejection failed: ${e}`);
@@ -288,18 +304,20 @@ export class FlowService {
     const allowedFolderIds = this.auth.getAuthorizedFolderIds(userEmail);
 
     // 2. 全フローデータを取得
-    const allFlows = this.db.getData<FlowMeta>('Flows');
+    const allFlows = this.db.getData<FlowRow>(SHEET_NAMES.FLOWS);
 
     // 3. フォルダIDに基づいてフィルタリング
     const visibleFlows = allFlows.filter((flow) =>
-      allowedFolderIds.includes(flow.folder_id),
+      allowedFolderIds.includes(flow.folderId),
     );
 
-    // 4. 更新日時順（降順）でソートして返す
-    return visibleFlows.sort((a, b) => {
-      return (
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      );
-    });
+    // 4. 更新日時順（降順）でソートし、Metaに変換して返す
+    return visibleFlows
+      .sort((a, b) => {
+        return (
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+      })
+      .map(toFlowMeta);
   }
 }
