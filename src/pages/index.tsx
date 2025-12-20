@@ -1,7 +1,6 @@
 import { useNavigate } from '@ciderjs/city-gas/react';
 import {
   ArrowRight,
-  Check,
   CheckCircle2,
   FileSpreadsheet,
   GitPullRequestArrow,
@@ -18,7 +17,6 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';

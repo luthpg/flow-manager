@@ -27,33 +27,49 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { FlowSheet } from '~/types/flow';
+import { useFlowStore } from '@/stores/flow-store';
+import { useShallow } from 'zustand/react/shallow';
+import type { RouteNames } from '@/generated/router';
+
+type NavigateFunction = any;
 
 // --- Props Definition ---
 interface SheetTabsProps {
-  sheets: FlowSheet[];
-  activeSheetId: string;
-  onSwitch: (id: string) => void;
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-  onRename: (id: string, name: string) => void;
-  onReorder: (newSheets: FlowSheet[]) => void;
+  flowId: string;
+  version: string;
+  navigate: NavigateFunction;
+  routeName: RouteNames;
+  readOnly?: boolean;
+}
+
+interface SortableTabItemProps {
+  sheet: FlowSheet;
+  flowId: string;
+  version: string;
+  navigate: NavigateFunction;
+  routeName: RouteNames;
   readOnly?: boolean;
 }
 
 // --- Sortable Item Component ---
-interface SortableTabItemProps
-  extends Omit<SheetTabsProps, 'sheets' | 'onAdd' | 'onReorder'> {
-  sheet: FlowSheet;
-}
-
 const SortableTabItem = ({
   sheet,
-  activeSheetId,
-  onSwitch,
-  onRemove,
-  onRename,
+  flowId,
+  version,
+  navigate,
+  routeName,
   readOnly,
 }: SortableTabItemProps) => {
+  const { activeSheetId, switchSheet, removeSheet, renameSheet } =
+    useFlowStore(
+      useShallow((state) => ({
+        activeSheetId: state.activeSheetId,
+        switchSheet: state.switchSheet,
+        removeSheet: state.removeSheet,
+        renameSheet: state.renameSheet,
+      })),
+    );
+
   const {
     attributes,
     listeners,
@@ -66,7 +82,7 @@ const SortableTabItem = ({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 50 : 'auto', // ドラッグ中は最前面に
+    zIndex: isDragging ? 50 : 'auto',
     position: 'relative' as const,
   };
 
@@ -74,6 +90,11 @@ const SortableTabItem = ({
   const [editName, setEditName] = useState('');
 
   const isActive = sheet.id === activeSheetId;
+
+  const handleSwitch = () => {
+    if (isActive) return;
+    switchSheet(sheet.id, routeName, { id: flowId, version }, navigate);
+  };
 
   const startEditing = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -84,9 +105,14 @@ const SortableTabItem = ({
 
   const finishEditing = () => {
     if (editingId && editName.trim()) {
-      onRename(editingId, editName);
+      renameSheet(editingId, editName);
     }
     setEditingId(null);
+  };
+
+  const handleRemove = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    removeSheet(sheet.id, routeName, { id: flowId, version }, navigate);
   };
 
   return (
@@ -102,10 +128,9 @@ const SortableTabItem = ({
           : 'bg-muted border-transparent hover:bg-muted/80 text-muted-foreground',
         isDragging && 'opacity-50',
       )}
-      onClick={() => !isActive && onSwitch(sheet.id)}
-      onKeyUp={() => !isActive && onSwitch(sheet.id)}
+      onClick={handleSwitch}
+      onKeyUp={handleSwitch}
     >
-      {/* Name or Input */}
       {editingId === sheet.id ? (
         <Input
           className="h-6 w-full px-1 py-0 text-xs bg-background"
@@ -114,8 +139,8 @@ const SortableTabItem = ({
           onBlur={finishEditing}
           onKeyDown={(e) => e.key === 'Enter' && finishEditing()}
           autoFocus
-          onClick={(e) => e.stopPropagation()} // ドラッグ開始を防ぐ
-          onPointerDown={(e) => e.stopPropagation()} // DndKitのセンサー回避
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
         />
       ) : (
         <span
@@ -127,7 +152,6 @@ const SortableTabItem = ({
         </span>
       )}
 
-      {/* Menu (Rename / Delete) */}
       {!readOnly && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -137,7 +161,6 @@ const SortableTabItem = ({
                 'opacity-0 group-hover:opacity-100 p-0.5 rounded-sm hover:bg-muted-foreground/20',
                 isActive && 'opacity-100',
               )}
-              // メニューを開くクリックがドラッグとして認識されないようにする
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
@@ -149,10 +172,7 @@ const SortableTabItem = ({
               <Pencil className="w-3 h-3 mr-2" /> Rename
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemove(sheet.id);
-              }}
+              onClick={handleRemove}
               className="text-destructive focus:text-destructive"
             >
               <X className="w-3 h-3 mr-2" /> Delete
@@ -166,21 +186,23 @@ const SortableTabItem = ({
 
 // --- Main Container Component ---
 export const SheetTabs = ({
-  sheets,
-  activeSheetId,
-  onSwitch,
-  onAdd,
-  onRemove,
-  onRename,
-  onReorder,
+  flowId,
+  version,
+  navigate,
+  routeName,
   readOnly = false,
 }: SheetTabsProps) => {
-  // センサー設定: クリックとドラッグを区別するため、5px以上動いた時だけドラッグとみなす
+  const { sheets, addSheet, reorderSheets } = useFlowStore(
+    useShallow((state) => ({
+      sheets: state.sheets,
+      addSheet: state.addSheet,
+      reorderSheets: state.reorderSheets,
+    })),
+  );
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
+      activationConstraint: { distance: 5 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -189,13 +211,15 @@ export const SheetTabs = ({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-
     if (over && active.id !== over.id) {
       const oldIndex = sheets.findIndex((s) => s.id === active.id);
       const newIndex = sheets.findIndex((s) => s.id === over.id);
-      // 配列を並べ替えて親に通知
-      onReorder(arrayMove(sheets, oldIndex, newIndex));
+      reorderSheets(arrayMove(sheets, oldIndex, newIndex));
     }
+  };
+
+  const handleAdd = () => {
+    addSheet(routeName, { id: flowId, version }, navigate);
   };
 
   return (
@@ -213,23 +237,22 @@ export const SheetTabs = ({
             <SortableTabItem
               key={sheet.id}
               sheet={sheet}
-              activeSheetId={activeSheetId}
-              onSwitch={onSwitch}
-              onRemove={onRemove}
-              onRename={onRename}
+              flowId={flowId}
+              version={version}
+              navigate={navigate}
+              routeName={routeName}
               readOnly={readOnly}
             />
           ))}
         </SortableContext>
       </DndContext>
 
-      {/* Add Button */}
       {!readOnly && (
         <Button
           variant="ghost"
           size="icon"
           className="w-8 h-8 rounded-full ml-1 hover:bg-muted-foreground/20 shrink-0"
-          onClick={onAdd}
+          onClick={handleAdd}
           title="Add Sheet"
         >
           <Plus className="w-4 h-4" />
@@ -238,3 +261,4 @@ export const SheetTabs = ({
     </div>
   );
 };
+
