@@ -4,7 +4,7 @@ import { cityGasRouter } from '@ciderjs/city-gas/plugin';
 import { gasnuki } from '@ciderjs/gasnuki/vite';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type PluginOption } from 'vite';
 import { gas } from 'vite-plugin-google-apps-script';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import tsconfigPaths from 'vite-tsconfig-paths';
@@ -24,7 +24,7 @@ export default defineConfig({
     tsconfigPaths(),
     tailwindcss(),
     cityGasRouter(),
-    gasnuki() as any,
+    gasnuki() as PluginOption,
     gas(),
     viteSingleFile(),
   ],
