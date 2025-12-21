@@ -8,11 +8,6 @@ import type { FlowData, FlowMeta } from '~/types/flow';
 // --- Mock Data Generators (for Local Development) ---
 const mockResponse = <T>(data: T): string =>
   JSON.stringify({ success: true, data });
-const mockError = (msg: string): string =>
-  JSON.stringify({
-    success: false,
-    error: msg,
-  });
 
 // mockData.ts
 export const mockFlows: FlowMeta[] = [

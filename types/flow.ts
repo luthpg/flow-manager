@@ -19,6 +19,8 @@ export interface FlowSheet {
 export interface FlowData {
   /** フロー全体のメタ情報 */
   meta: FlowMeta;
+  /** バージョン詳細情報 */
+  version: FlowVersionDetail;
   graphData: FlowGraphData;
 }
 

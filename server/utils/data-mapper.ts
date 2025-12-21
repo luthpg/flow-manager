@@ -36,9 +36,9 @@ export function toFlowMeta(row: FlowRow): FlowMeta {
     title: row.title,
     currentStatus: row.currentStatus as FlowStatus,
     activeVersionId: row.activeVersionId,
-    // For dashboard, we might not have a specific 'versionId' context, 
+    // For dashboard, we might not have a specific 'versionId' context,
     // so we can use activeVersionId or empty string.
-    versionId: row.activeVersionId, 
+    versionId: row.activeVersionId,
     updatedAt: new Date(row.updatedAt).toISOString(),
     thumbnail: undefined, // Not in DB
   };
@@ -62,21 +62,33 @@ const MAX_CELL_LENGTH = 49000; // Safety margin below 50k
 export function splitJsonData(jsonString: string): Record<string, string> {
   const result: Record<string, string> = {};
   const totalLength = jsonString.length;
-  
+
   // jsonData (1)
   result.jsonData = jsonString.substring(0, MAX_CELL_LENGTH);
 
   if (totalLength > MAX_CELL_LENGTH) {
-    result.jsonData2 = jsonString.substring(MAX_CELL_LENGTH, MAX_CELL_LENGTH * 2);
+    result.jsonData2 = jsonString.substring(
+      MAX_CELL_LENGTH,
+      MAX_CELL_LENGTH * 2,
+    );
   }
   if (totalLength > MAX_CELL_LENGTH * 2) {
-    result.jsonData3 = jsonString.substring(MAX_CELL_LENGTH * 2, MAX_CELL_LENGTH * 3);
+    result.jsonData3 = jsonString.substring(
+      MAX_CELL_LENGTH * 2,
+      MAX_CELL_LENGTH * 3,
+    );
   }
   if (totalLength > MAX_CELL_LENGTH * 3) {
-    result.jsonData4 = jsonString.substring(MAX_CELL_LENGTH * 3, MAX_CELL_LENGTH * 4);
+    result.jsonData4 = jsonString.substring(
+      MAX_CELL_LENGTH * 3,
+      MAX_CELL_LENGTH * 4,
+    );
   }
   if (totalLength > MAX_CELL_LENGTH * 4) {
-    result.jsonData5 = jsonString.substring(MAX_CELL_LENGTH * 4, MAX_CELL_LENGTH * 5);
+    result.jsonData5 = jsonString.substring(
+      MAX_CELL_LENGTH * 4,
+      MAX_CELL_LENGTH * 5,
+    );
   }
 
   return result;

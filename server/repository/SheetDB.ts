@@ -100,7 +100,7 @@ export class SheetDB {
 
         // 更新データで上書きした新しい行データを作成
         const newRow = headers.map((header, colIndex) => {
-          if (Object.prototype.hasOwnProperty.call(updateData, header)) {
+          if (Object.hasOwn(updateData, header)) {
             const val = updateData[header];
             if (val instanceof Date) return val.toISOString();
             if (typeof val === 'object' && val !== null)

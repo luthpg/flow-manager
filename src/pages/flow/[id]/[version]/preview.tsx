@@ -2,12 +2,11 @@ import {
   Background,
   Controls,
   type Edge,
-  MiniMap, // ▼ 追加
+  MiniMap,
   type Node,
   ReactFlow,
   ReactFlowProvider,
-  useEdgesState,
-  useNodesState,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useNavigate, useParams } from '@ciderjs/city-gas/react';
@@ -25,7 +24,7 @@ import {
   User,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import z from 'zod';
 import {
@@ -69,7 +68,6 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Toggle } from '@/components/ui/toggle';
 import useIsMobile from '@/hooks/is-mobile';
-import { useFlowSheets } from '@/hooks/use-flow-sheets';
 import {
   computeDiff,
   type DiffDecision,
@@ -78,9 +76,9 @@ import {
 } from '@/lib/diff-utils';
 import { serverScripts } from '@/lib/server';
 import { cn } from '@/lib/utils';
-import type { FlowStatus, Role } from '~/types/appsscript/client';
+import { useFlowStore } from '@/stores/flow-store';
 import type { ApiResponse } from '~/types/appsscript/server';
-import type { FlowData, FlowGraphData, FlowMeta } from '~/types/flow';
+import type { FlowData, FlowGraphData, FlowStatus, Role } from '~/types/flow';
 
 // 履歴表示用の型定義
 interface HistoryItem {
@@ -116,7 +114,7 @@ const getDiffStyle = (
         borderWidth: '3px',
       };
     default:
-      return { opacity: 0.5 }; // 変更なしは少し薄くして差分を目立たせる(任意)
+      return { opacity: 0.5 }; // 変更なしは少し薄くして差分を目立たせる
   }
 };
 
@@ -249,12 +247,19 @@ function ViewerContent({
   const navigate = useNavigate();
   const { theme } = useTheme();
 
-  // --- State ---
-  // Read-onlyなのでonNodesChange等は不要だが、選択状態管理のためにuseNodesStateを使う
-  const [nodes, setNodes, _onNodesChange] = useNodesState<
-    Node & { data: ViewerSidebarContentProps }
-  >([]);
-  const [edges, setEdges, _onEdgesChange] = useEdgesState<Edge>([]);
+  // --- Store Hooks ---
+  const {
+    nodes,
+    edges,
+    sheets,
+    activeSheetId,
+    setNodes,
+    setEdges,
+    init,
+    switchSheet,
+  } = useFlowStore();
+
+  // --- Local State ---
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -264,16 +269,18 @@ function ViewerContent({
   const [historyList, setHistoryList] = useState<HistoryItem[]>([]);
 
   const [isDiffMode, setIsDiffMode] = useState(false);
-  const [diffChanges, setDiffChanges] = useState<Record<string, any>>({});
+  // const [diffChanges, setDiffChanges] = useState<Record<string, any>>({});
   const [diffDecisions, setDiffDecisions] = useState<
     Record<string, DiffDecision>
   >({});
-  // Diff表示用のノード (判定を反映したプレビュー用)
+
+  // Diff表示用データ (計算結果を保持)
+  const diffDataRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const [previewNodes, setPreviewNodes] = useState<
     (Node & { data: { label?: string } })[]
   >([]);
-  const [previewEdges, setPreviewEdges] = useState<Edge[]>([]);
-  // 元のDiff計算結果 (Stateとして保持)
+
+  // 元のDiff計算結果
   const [rawDiffResult, setRawDiffResult] = useState<{
     nodes: Node[];
     edges: Edge[];
@@ -291,13 +298,8 @@ function ViewerContent({
   const [isActionProcessing, setIsActionProcessing] = useState(false);
 
   const { isMobile } = useIsMobile();
-
-  // ▼ Sheet Management Hook
-  const { sheets, activeSheetId, setSheets, setActiveSheetId, switchSheet } =
-    useFlowSheets({
-      routeName: '/flow/[id]/[version]/preview',
-      routeParams: { id, version },
-    });
+  // ReactFlow instance for fitView etc (optional)
+  const { fitView } = useReactFlow();
 
   // --- Node Types Definition ---
   const nodeTypes = useMemo(
@@ -326,109 +328,117 @@ function ViewerContent({
         const res = JSON.parse(json) as ApiResponse<FlowData>;
 
         if (res.success && res.data) {
-          const { meta, graphData } = res.data;
-          const verData = {} as any;
+          const { meta, graphData, version: verData } = res.data;
 
           setFlowTitle(meta.title);
-          setFlowStatus(meta.currentStatus);
-          setUserRole(userRole);
+          setFlowStatus(verData.status);
+          // TODO: User Role should be fetched from somewhere or determined
+          setUserRole('EDITOR'); // 仮: 権限ロジックの実装が必要
 
-          // ▼ シートデータのロード処理
-          setSheets(graphData.sheets);
+          // ストア初期化
+          init(
+            graphData,
+            '/flow/[id]/[version]/preview',
+            { id, version },
+            navigate,
+          );
+
+          // Diff用: 初期シートのデータを取得 (ストア初期化後なので、graphDataから直接参照)
           const initialId =
             sheetId || graphData.activeSheetId || graphData.sheets[0].id;
-          setActiveSheetId(initialId);
-
           const finalNodes = graphData.sheets?.[0]?.nodes || [];
           const finalEdges = graphData.sheets?.[0]?.edges || [];
 
           // 2. Diffモードの準備 (PENDING かつ 比較対象がある場合)
           if (verData.status === 'PENDING' && initialId) {
             try {
-              // 比較対象(公開版)を取得
-              const baseJson = await serverScripts.getFlowData(id, initialId);
-              const baseRes = JSON.parse(baseJson);
+              // 比較対象(公開版)を取得するために activeVersionId 等を使うべきだが、
+              // ここでは簡易的に前バージョンや公開バージョンを取得するロジックが必要
+              // 仮に activeVersionId を使う
+              const compareVersionId = meta.activeVersionId;
+              if (compareVersionId && compareVersionId !== version) {
+                const baseJson = await serverScripts.getFlowData(
+                  id,
+                  compareVersionId,
+                );
+                const baseRes = JSON.parse(baseJson);
 
-              if (baseRes.success) {
-                const baseNodes =
-                  baseRes.data.graphData.sheets?.[0]?.nodes || [];
-                const baseEdges =
-                  baseRes.data.graphData.sheets?.[0]?.edges || [];
+                if (baseRes.success) {
+                  const baseNodes =
+                    baseRes.data.graphData.sheets?.[0]?.nodes || [];
+                  const baseEdges =
+                    baseRes.data.graphData.sheets?.[0]?.edges || [];
 
-                // Diff計算
-                const {
-                  nodes: diffNodes,
-                  edges: diffEdges,
-                  changes,
-                } = computeDiff(baseNodes, baseEdges, finalNodes, finalEdges);
+                  // Diff計算
+                  const {
+                    nodes: diffNodes,
+                    edges: diffEdges,
+                    // changes, // Unused
+                  } = computeDiff(baseNodes, baseEdges, finalNodes, finalEdges);
 
-                setRawDiffResult({
-                  nodes: diffNodes,
-                  edges: diffEdges,
-                  baseNodes,
-                  baseEdges, // 復元用に保持
-                });
+                  setRawDiffResult({
+                    nodes: diffNodes,
+                    edges: diffEdges,
+                    baseNodes,
+                    baseEdges,
+                  });
 
-                setPreviewNodes(diffNodes);
-                setPreviewEdges(diffEdges);
-                setDiffChanges(changes);
+                  // Diffデータの保存
+                  diffDataRef.current = {
+                    nodes: diffNodes,
+                    edges: diffEdges,
+                  };
+                  setPreviewNodes(diffNodes);
+                  // setDiffChanges(changes);
 
-                // 生データとDiffデータを保持しておく
-                setOriginalGraph({ nodes: finalNodes, edges: finalEdges });
-
-                // 初期状態ではDiffデータを持たせておくが、モードOFFなら通常表示に戻す制御をする
-                // ここでは便宜上、Diff計算結果を保持するstateを分けるか、
-                // isDiffMode 切り替え時に nodes を差し替える方式をとる
-
-                // 簡単のため「Diffデータ」を別のRefかStateに保存
-                // (実装簡略化のため、useEffect内での即時反映はせず、トグル時に切り替えるロジックにします)
-                (window as any).__diffData = {
-                  nodes: diffNodes,
-                  edges: diffEdges,
-                };
+                  // 元データを保存 (DiffモードOFF時の復帰用)
+                  setOriginalGraph({ nodes: finalNodes, edges: finalEdges });
+                }
               }
             } catch (e) {
               console.error('Failed to fetch comparison version', e);
             }
           }
 
-          const activeSheet = graphData.sheets.find((s) => s.id === initialId);
-          setNodes(activeSheet?.nodes || []);
-          setEdges(activeSheet?.edges || []);
-
           // コメント履歴パース
           const rawComments = verData.comment || '';
           const parsedHistory = parseHistory(
             rawComments,
-            verData.created_by,
-            verData.created_at,
+            verData.createdBy,
+            verData.createdAt,
           );
           setHistoryList(parsedHistory);
         } else {
           toast.error('Failed to load flow', { description: res.error });
         }
       } catch (e) {
+        console.error(e);
         toast.error('Connection failed');
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, [id, version, setNodes, setEdges, setSheets, setActiveSheetId, userRole]);
+  }, [id, version, init, navigate, sheetId]); // sheetId added
 
   // --- Sheet Switch Handler ---
   const handleSwitchSheet = useCallback(
     (targetId: string) => {
-      const { nodes: nextNodes, edges: nextEdges } = switchSheet(
+      // シート切り替え時はDiffモードを解除する（Diffは通常メインシートのみ対応のため）
+      if (isDiffMode) {
+        setIsDiffMode(false);
+        // Diff解除は toggleDiffMode のロジックが必要だが、switchSheet で store は上書きされるので
+        // Diffモードフラグだけ折ればよい
+      }
+      switchSheet(
         targetId,
-        nodes,
-        edges,
+        '/flow/[id]/[version]/preview',
+        { id, version },
+        navigate,
       );
-      setNodes(nextNodes);
-      setEdges(nextEdges);
       setSelectedNodeId(null);
     },
-    [nodes, edges, switchSheet, setNodes, setEdges],
+    [isDiffMode, navigate, id, version, switchSheet],
   );
 
   // ▼ 判定切り替えハンドラ
@@ -440,15 +450,13 @@ function ViewerContent({
     setDiffDecisions(newDecisions);
 
     // プレビューの更新
-    // ここでは「見た目」を変える。
-    // Rejectedなら: Added->透明化, Deleted->通常表示, Modified->元の見た目に戻す
     if (rawDiffResult) {
       const updatedNodes = rawDiffResult.nodes.map((n) => {
         const decision = newDecisions[n.id] || 'accepted';
-        const status = n.data._diff;
+        const status = n.data._diff as DiffStatus;
 
         if (decision === 'rejected') {
-          if (status === 'added') return { ...n, hidden: true }; // 追加拒否＝消す
+          if (status === 'added') return { ...n, hidden: true };
           if (status === 'deleted')
             return {
               ...n,
@@ -458,19 +466,38 @@ function ViewerContent({
                 borderStyle: 'solid',
                 borderColor: 'transparent',
               },
-            }; // 削除拒否＝復活（スタイルリセット）
+            };
           if (status === 'modified') {
-            // 変更拒否＝元のデータに戻して表示 (簡易的にスタイルだけ戻すか、データごと戻す)
-            // 厳密なプレビューのためには resolveDiff のロジックをここでも使うのが良い
             const original = rawDiffResult.baseNodes.find(
               (bn) => bn.id === n.id,
             );
-            return original ? { ...original, position: n.position } : n; // 位置は今のまま、中身は戻すなどの調整
+            return original ? { ...original, position: n.position } : n;
           }
         }
-        return n; // acceptedならそのままDiff表示
+        return n;
       });
       setPreviewNodes(updatedNodes);
+
+      // Storeにも反映 (Diffモード中なら)
+      if (isDiffMode) {
+        // スタイル適用
+        const styledNodes = updatedNodes.map((n) => {
+          const status = n.data._diff as DiffStatus;
+          if (!status || status === 'unchanged') return n;
+          // Rejected (hidden or reverted) なものはスタイル適用不要あるいはhidden
+          if (n.hidden) return n;
+
+          // RejectedでなければDiffスタイルを適用
+          return {
+            ...n,
+            style: {
+              ...n.style,
+              ...getDiffStyle(status, resolvedTheme === 'dark'),
+            },
+          };
+        });
+        setNodes(styledNodes);
+      }
     }
   };
 
@@ -481,7 +508,7 @@ function ViewerContent({
       let res: ApiResponse<{ status: string; versionId?: string }>;
       if (action === 'approve') {
         // 1. 最終データの生成 (Resolve)
-        let graphDataPayload;
+        let graphDataPayload: FlowGraphData | undefined;
 
         if (rawDiffResult) {
           const { nodes: finalNodes, edges: finalEdges } = resolveDiff(
@@ -493,8 +520,18 @@ function ViewerContent({
           );
 
           // シート構造に合わせて整形
+          // 現状のStoreのsheetsを取得し、Activeなシート(index 0と仮定)を更新
+          const currentSheets = [...sheets];
+          if (currentSheets.length > 0) {
+            currentSheets[0] = {
+              ...currentSheets[0],
+              nodes: finalNodes,
+              edges: finalEdges,
+            };
+          }
+
           graphDataPayload = {
-            sheets: [{ ...sheets[0], nodes: finalNodes, edges: finalEdges }], // マルチシート対応なら全シート分やる
+            sheets: currentSheets,
             activeSheetId: activeSheetId,
           };
         }
@@ -519,8 +556,6 @@ function ViewerContent({
 
       if (res.success) {
         toast.success(action === 'approve' ? 'Flow approved' : 'Flow rejected');
-        // 承認時は新しいバージョン(リリースID)が返ってくる可能性があるため遷移
-        // 否認時はステータスが変わるのでリロード
         if (
           action === 'approve' &&
           res.data?.versionId &&
@@ -536,7 +571,7 @@ function ViewerContent({
       } else {
         toast.error('Action failed', { description: res.error });
       }
-    } catch (e) {
+    } catch (_e) {
       toast.error('Communication error');
     } finally {
       setIsActionProcessing(false);
@@ -545,21 +580,32 @@ function ViewerContent({
   };
 
   // --- Helper: Node Selection ---
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
-  const onSelectionChange = ({ nodes }: { nodes: Node[] }) => {
-    const newNode = nodes[0];
-    setSelectedNodeId(newNode?.id || null);
-    if (newNode && window.innerWidth < 768) {
-      toast.info('Node selected', {
-        description: 'Tap info button for details',
-      });
-    }
-  };
+  // Storeのnodesを使う
+  const selectedNode = useMemo(
+    () =>
+      nodes.find((n) => n.id === selectedNodeId) as
+        | (Node & { data: ViewerSidebarContentProps })
+        | undefined,
+    [nodes, selectedNodeId],
+  );
+
+  const onSelectionChange = useCallback(
+    ({ nodes: selectedNodes }: { nodes: Node[] }) => {
+      const newNode = selectedNodes[0];
+      setSelectedNodeId(newNode?.id || null);
+      if (newNode && window.innerWidth < 768) {
+        toast.info('Node selected', {
+          description: 'Tap info button for details',
+        });
+      }
+    },
+    [],
+  );
 
   // --- Toggle Diff Mode ---
   const toggleDiffMode = (pressed: boolean) => {
     setIsDiffMode(pressed);
-    const diffData = (window as any).__diffData;
+    const diffData = diffDataRef.current;
 
     if (pressed && diffData) {
       // Diffデータを適用 (スタイル注入)
@@ -590,8 +636,9 @@ function ViewerContent({
 
       setNodes(styledNodes);
       setEdges(styledEdges);
+      setTimeout(() => fitView(), 50);
     } else if (originalGraph) {
-      // 通常モードに戻す
+      // 通常モードに戻す (Original Graph data)
       setNodes(originalGraph.nodes);
       setEdges(originalGraph.edges);
     }
@@ -1001,7 +1048,7 @@ function parseHistory(
   const entries = rawComment.split(/\n\n/g);
   entries.forEach((entry, idx) => {
     // Regex to capture "[Approved by email]: comment"
-    const match = entry.match(/^\[(Approved|Rejected) by (.+?)\]:\s*(.*)/s);
+    const match = entry.match(/^\\\[(Approved|Rejected) by (.+?)\]:\s*(.*)/s);
     if (match) {
       const actionType = match[1].toUpperCase() as 'APPROVED' | 'REJECTED';
       const user = match[2].split('@')[0];

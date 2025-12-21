@@ -1,18 +1,20 @@
 import {
   addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   Background,
   BackgroundVariant,
   type Connection,
   Controls,
   type Edge,
+  type EdgeChange,
   MarkerType,
   MiniMap,
   type Node,
+  type NodeChange,
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
-  useEdgesState,
-  useNodesState,
   useReactFlow,
 } from '@xyflow/react';
 import type React from 'react';
@@ -52,6 +54,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import z from 'zod';
+import { useShallow } from 'zustand/react/shallow';
 import {
   BpmnAnnotationNode,
   BpmnArrowNode,
@@ -113,7 +116,6 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { useChangeHistory } from '@/hooks/use-change-history';
-import { useFlowSheets } from '@/hooks/use-flow-sheets';
 import {
   assignLaneToNodes,
   autoFormatGraph,
@@ -122,8 +124,9 @@ import {
 import { GRID_SIZE, OFFSET_Y, SLOT_HEIGHT, SLOT_WIDTH } from '@/lib/constants';
 import { serverScripts } from '@/lib/server';
 import { cn } from '@/lib/utils';
+import { useFlowStore } from '@/stores/flow-store';
 import type { ApiResponse } from '~/types/appsscript/server';
-import type { FlowData, FlowGraphData, FlowStatus } from '~/types/flow';
+import type { FlowData, FlowStatus } from '~/types/flow';
 
 // 定義済みカラーパレット（BPMNツールでよくある色）
 const LANE_COLORS = [
@@ -203,13 +206,50 @@ function FlowEditorContent({
   const navigate = useNavigate();
   const { theme } = useTheme(); // 現在のテーマを取得
 
-  // --- State ---
+  // --- Zustand Store ---
+  const {
+    nodes,
+    edges,
+    activeSheetId,
+    init,
+    setNodes,
+    setEdges,
+    switchSheet,
+    getSnapshot,
+  } = useFlowStore(
+    useShallow((state) => ({
+      nodes: state.nodes,
+      edges: state.edges,
+      activeSheetId: state.activeSheetId,
+      init: state.init,
+      setNodes: state.setNodes,
+      setEdges: state.setEdges,
+      switchSheet: state.switchSheet,
+      getSnapshot: state.getSnapshot,
+    })),
+  );
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      const currentNodes = useFlowStore.getState().nodes;
+      setNodes(applyNodeChanges(changes, currentNodes));
+    },
+    [setNodes],
+  );
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const currentEdges = useFlowStore.getState().edges;
+      setEdges(applyEdgeChanges(changes, currentEdges));
+    },
+    [setEdges],
+  );
+
+  // --- React Flow Instance ---
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { screenToFlowPosition, deleteElements, setCenter, getZoom } =
     useReactFlow();
 
+  // --- Local UI State ---
   const [flowTitle, setFlowTitle] = useState('');
   const [flowStatus, setFlowStatus] = useState<FlowStatus>('DRAFT');
   const [folderId, setFolderId] = useState('temp-folder-id');
@@ -221,27 +261,24 @@ function FlowEditorContent({
   const [pendingJumpNodeId, setPendingJumpNodeId] = useState<string | null>(
     null,
   );
-  const [rawData, setRawData] = useState<FlowGraphData | null>(null); // サーバー生データ保持用
   const [clipboard, setClipboard] = useState<{
     nodes: Node[];
     edges: Edge[];
-  } | null>(null); // クリップボード (アプリ内メモリ)
+  } | null>(null);
 
-  // 挿入ダイアログ用State
+  // Dialogs State
   const [isInsertDialogOpen, setIsInsertDialogOpen] = useState(false);
   const [insertConfig, setInsertConfig] = useState<{
     axis: 'x' | 'y';
     cursor: { x: number; y: number };
   } | null>(null);
   const [insertCount, setInsertCount] = useState(1);
-
-  // 削除機能用のState
   const [deleteAlertConfig, setDeleteAlertConfig] = useState<{
     axis: 'x' | 'y';
     count: number;
     thresholdStart: number;
     deleteSize: number;
-    affectedNodes: number; // 削除されるノード数
+    affectedNodes: number;
   } | null>(null);
   const [deleteCountDialogConfig, setDeleteCountDialogConfig] = useState<{
     axis: 'x' | 'y';
@@ -249,29 +286,8 @@ function FlowEditorContent({
   } | null>(null);
   const [deleteCountInput, setDeleteCountInput] = useState(1);
 
-  // Sheet Management Hook
-  const {
-    sheets,
-    activeSheetId,
-    isInitialized,
-    setSheets,
-    setActiveSheetId,
-    getActiveSheetData,
-    switchSheet,
-    addSheet,
-    removeSheet,
-    renameSheet,
-    getSnapshot,
-    reorderSheets,
-  } = useFlowSheets({
-    initialData: rawData,
-    routeName: '/flow/[id]/[version]/edit',
-    routeParams: { id, version },
-  });
-
   // History Management Hook
-  const { takeSnapshot, undo, redo, clearSheetHistory } =
-    useChangeHistory(activeSheetId);
+  const { takeSnapshot, undo, redo } = useChangeHistory(activeSheetId);
 
   // --- Node Types Definition ---
   const nodeTypes = useMemo(
@@ -524,41 +540,17 @@ function FlowEditorContent({
         const json = await serverScripts.getFlowData(id, version);
         const res = JSON.parse(json) as ApiResponse<FlowData>;
         if (res.success && res.data) {
-          // ▼ データをHookに渡すためにStateへセット (Hook側でuseEffectが反応して初期化される)
-          setRawData(res.data.graphData);
+          // ▼ Store's init action
+          init(
+            res.data.graphData,
+            '/flow/[id]/[version]/edit',
+            { id, version, sheetId },
+            navigate,
+          );
 
           setFlowTitle(res.data.meta.title);
           setFlowStatus(res.data.meta.currentStatus);
           setFolderId(res.data.meta.folderId);
-
-          const graphData = res.data.graphData ?? {
-            activeSheetId: null,
-            sheets: [
-              {
-                id: '0',
-                name: 'Page 1',
-                nodes: [],
-                edges: [],
-              },
-            ],
-          };
-          setSheets(graphData.sheets);
-          // パラメータ情報でシートIDを渡された場合はそちらを優先する
-          const initialId =
-            sheetId ?? graphData.activeSheetId ?? graphData.sheets?.[0].id;
-          setActiveSheetId(initialId);
-
-          // 現在のキャンバスに反映
-          const activeSheet = graphData.sheets?.find((s) => s.id === initialId);
-          const sanitizedNodes = activeSheet?.nodes.map((n: Node) => ({
-            ...n,
-            // 保存された locked 状態を React Flow のプロパティに適用
-            draggable: !n.data.locked,
-            deletable: !n.data.locked,
-            connectable: !n.data.locked,
-          }));
-          setNodes(sanitizedNodes ?? []);
-          setEdges(activeSheet?.edges ?? []);
         } else {
           toast.error('Failed to load flow', { description: res.error });
         }
@@ -570,25 +562,7 @@ function FlowEditorContent({
       }
     };
     fetchData();
-  }, [id, version]);
-
-  // --- 2. Sync ReactFlow State on Sheet Change ---
-  // Hookの初期化完了時、またはアクティブシートIDが変わったタイミングで、ReactFlowにデータを流し込む
-  // biome-ignore lint/correctness/useExhaustiveDependencies: initial load
-  useEffect(() => {
-    if (isInitialized && activeSheetId) {
-      // 現在のReactFlowのnodesが空なら(初回ロード時)、データをセットする
-      const data = getActiveSheetData();
-      // 初期化直後だけセット
-
-      // 簡易実装: rawDataが変わった直後(初期化直後)のみ実行したいが、
-      // 実際には switchSheet ハンドラ内で setNodes しているので、ここは不要かもしれない。
-      // ただし、「ブラウザバック」でURLが変わり、activeSheetIdがHook内で変わった場合、
-      // ここで検知して反映させる必要がある。
-      setNodes(data.nodes);
-      setEdges(data.edges);
-    }
-  }, [isInitialized, activeSheetId]); // activeSheetIdが変わるたびにロード (ブラウザバック対応)
+  }, [id, version, sheetId, init, navigate]);
 
   // --- 2. Event Handlers ---
 
@@ -621,19 +595,15 @@ function FlowEditorContent({
         isDotted = true;
       }
 
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...params,
-            type: 'smoothstep', // 直角折れ線
-            markerEnd: { type: MarkerType.ArrowClosed },
-            style: isDotted ? { strokeDasharray: '5,5' } : undefined, // ▼ 点線スタイル
-          },
-          eds,
-        ),
-      );
+      const newEdge = {
+        ...params,
+        type: 'smoothstep', // 直角折れ線
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: isDotted ? { strokeDasharray: '5,5' } : undefined, // ▼ 点線スタイル
+      };
+      setEdges(addEdge(newEdge, edges));
     },
-    [setEdges, nodes], // nodes依存を追加
+    [nodes, edges, setEdges],
   );
 
   const onDragStart = (
@@ -741,9 +711,9 @@ function FlowEditorContent({
         dragHandle: type === 'bpmnSwimlane' ? '.lane-drag-handle' : undefined,
         data: nodeData,
       };
-      setNodes((nds) => nds.concat(newNode));
+      setNodes(nodes.concat(newNode));
     },
-    [screenToFlowPosition, setNodes],
+    [screenToFlowPosition, nodes, setNodes],
   );
 
   const onNodeDragStop = useCallback(
@@ -753,11 +723,12 @@ function FlowEditorContent({
         node.position.y,
         node.type || 'default',
       );
-      setNodes((nds) =>
-        nds.map((n) => (n.id === node.id ? { ...n, position: { x, y } } : n)),
+      const newNodes = nodes.map((n) =>
+        n.id === node.id ? { ...n, position: { x, y } } : n,
       );
+      setNodes(newNodes);
     },
-    [setNodes],
+    [nodes, setNodes],
   );
 
   // ▼ 削除ハンドラ
@@ -785,78 +756,75 @@ function FlowEditorContent({
 
   const updateNodeData = useCallback(
     (key: string, value: string) => {
-      setNodes((nds) =>
-        nds.map((node) => {
-          if (node.id === selectedNodeId) {
-            return { ...node, data: { ...node.data, [key]: value } };
-          }
-          return node;
-        }),
-      );
+      const newNodes = nodes.map((node) => {
+        if (node.id === selectedNodeId) {
+          return { ...node, data: { ...node.data, [key]: value } };
+        }
+        return node;
+      });
+      setNodes(newNodes);
     },
-    [selectedNodeId, setNodes],
+    [selectedNodeId, nodes, setNodes],
   );
 
   // エッジラベル更新ハンドラ
   const updateEdgeLabel = useCallback(
     (label: string) => {
-      setEdges((eds) =>
-        eds.map((edge) => {
-          if (edge.id === selectedEdgeId) {
-            return {
-              ...edge,
-              label, // テキスト反映
-              // ラベルのスタイル設定 (Shadcnライクな見た目に)
-              labelStyle: {
-                fill: 'currentColor',
-                fontWeight: 500,
-                fontSize: 12,
-              },
-              labelBgStyle: {
-                fill: 'var(--background)',
-                fillOpacity: 0.9,
-                stroke: 'var(--border)',
-                strokeWidth: 1,
-              },
-              labelBgPadding: [8, 4],
-              labelBgBorderRadius: 4,
-            };
-          }
-          return edge;
-        }),
-      );
+      const newEdges = edges.map((edge) => {
+        if (edge.id === selectedEdgeId) {
+          return {
+            ...edge,
+            label, // テキスト反映
+            // ラベルのスタイル設定 (Shadcnライクな見た目に)
+            labelStyle: {
+              fill: 'currentColor',
+              fontWeight: 500,
+              fontSize: 12,
+            },
+            labelBgStyle: {
+              fill: 'var(--background)',
+              fillOpacity: 0.9,
+              stroke: 'var(--border)',
+              strokeWidth: 1,
+            },
+            labelBgPadding: [8, 4] as [number, number],
+            labelBgBorderRadius: 4,
+          };
+        }
+        return edge;
+      });
+      setEdges(newEdges);
     },
-    [selectedEdgeId, setEdges],
+    [selectedEdgeId, edges, setEdges],
   );
 
   const handleToggleLock = useCallback(() => {
     if (!selectedNodeId) return;
 
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === selectedNodeId) {
-          const newLockedState = !node.data.locked;
+    const newNodes = nodes.map((node) => {
+      if (node.id === selectedNodeId) {
+        const newLockedState = !node.data.locked;
 
-          return {
-            ...node,
-            draggable: !newLockedState,
-            deletable: !newLockedState,
-            connectable: !newLockedState,
-            // データとしての状態保存
-            data: {
-              ...node.data,
-              locked: newLockedState,
-            },
-          };
-        }
-        return node;
-      }),
-    );
+        return {
+          ...node,
+          draggable: !newLockedState,
+          deletable: !newLockedState,
+          connectable: !newLockedState,
+          // データとしての状態保存
+          data: {
+            ...node.data,
+            locked: newLockedState,
+          },
+        };
+      }
+      return node;
+    });
+    setNodes(newNodes);
 
     // トースト通知
     const isLocked = !nodes.find((n) => n.id === selectedNodeId)?.data.locked;
     toast.info(isLocked ? 'Node Locked' : 'Node Unlocked');
-  }, [selectedNodeId, setNodes, nodes.find]);
+  }, [selectedNodeId, nodes, setNodes]);
 
   // 選択中のノードのロック状態を取得
   const isSelectedNodeLocked = nodes.find((n) => n.id === selectedNodeId)?.data
@@ -869,7 +837,7 @@ function FlowEditorContent({
       const nodesWithLaneInfo = assignLaneToNodes(nodes);
       setNodes(nodesWithLaneInfo);
 
-      const fullData = getSnapshot(nodes, edges);
+      const fullData = getSnapshot(); // 引数なしに変更
       const json = await serverScripts.saveDraft({
         flowId: id,
         title: flowTitle,
@@ -880,9 +848,7 @@ function FlowEditorContent({
       if (!res.success) throw new Error(res.error);
 
       // 保存後、バージョンIDが変わる可能性がある（初回保存時など）
-      // または draft-xxx-today に更新される
       if (res.success && res.data.versionId !== version) {
-        // URLを新しいドラフトIDに書き換える (例: draft-user-today)
         navigate('/flow/[id]/[version]/edit', {
           id,
           version: res.data.versionId,
@@ -924,36 +890,16 @@ function FlowEditorContent({
   // --- Handlers for Sheets ---
   const handleSwitchSheet = useCallback(
     (targetId: string) => {
-      // 現在のReactFlowの状態を渡して切り替え、新しいデータを受け取る
-      const result = switchSheet(targetId, nodes, edges);
-      if (result) {
-        setNodes(result.nodes);
-        setEdges(result.edges);
-      }
+      switchSheet(
+        targetId,
+        '/flow/[id]/[version]/edit',
+        { id, version },
+        navigate,
+      );
     },
-    [nodes, edges, switchSheet, setNodes, setEdges],
+    [switchSheet, id, version, navigate],
   );
 
-  const handleAddSheet = useCallback(() => {
-    const { nodes: newNodes, edges: newEdges } = addSheet(nodes, edges);
-    setNodes(newNodes);
-    setEdges(newEdges);
-  }, [nodes, edges, addSheet, setNodes, setEdges]);
-
-  const handleRemoveSheet = useCallback(
-    (targetId: string) => {
-      // 削除ロジック実行 (アクティブだった場合は隣のシートデータが返ってくる)
-      const result = removeSheet(targetId);
-      if (result?.didSwitch) {
-        setNodes(result.nodes || []);
-        setEdges(result.edges || []);
-        clearSheetHistory(targetId);
-      }
-    },
-    [removeSheet, setNodes, setEdges, clearSheetHistory],
-  );
-
-  // ▼ Format Action Handler
   const handleFormat = useCallback(() => {
     // 1. ノードとスイムレーンの位置・サイズ修正
     const formattedNodes = autoFormatGraph(nodes);
@@ -998,15 +944,12 @@ function FlowEditorContent({
         currentStatus: flowStatus,
         updatedAt: new Date().toISOString(),
       },
-      graphData: {
-        activeSheetId,
-        sheets,
-      },
+      graphData: getSnapshot(), // ストアから取得
     };
 
     setExportedJson(JSON.stringify(exportData, null, 2));
     setIsExportDialogOpen(true);
-  }, [id, version, folderId, activeSheetId, flowTitle, flowStatus, sheets]);
+  }, [id, version, folderId, flowTitle, flowStatus, getSnapshot]);
 
   // --- Helper: 指定ノードへズームイン ---
   const focusNode = useCallback(
@@ -1023,16 +966,15 @@ function FlowEditorContent({
       setCenter(x, y, { zoom: targetZoom, duration: 800 });
 
       // 視覚的なフィードバック (一時的に選択状態にするなど)
-      setNodes((nds) =>
-        nds.map((n) => ({
-          ...n,
-          selected: n.id === node.id,
-        })),
-      );
+      const newNodes = nodes.map((n) => ({
+        ...n,
+        selected: n.id === node.id,
+      }));
+      setNodes(newNodes);
 
       toast.success(`Jumped to link "${node.data.label}"`);
     },
-    [setCenter, getZoom, setNodes],
+    [setCenter, getZoom, nodes, setNodes],
   );
 
   // --- Jump Logic ---
@@ -1040,14 +982,12 @@ function FlowEditorContent({
     (sourceLabel: string) => {
       if (!sourceLabel) return;
 
+      // ストアから最新のシート情報を取得
+      const { sheets, activeSheetId } = useFlowStore.getState();
+
       // 1. 全シートからターゲットを探す
-      //    条件: Type=bpmnJump かつ JumpType=target かつ Labelが一致
       let targetNode: Node | undefined;
       let targetSheetId: string | undefined;
-
-      // 現在の未保存状態(nodes)も含めて最新を探す必要があるが、
-      // 簡易的に sheets state + 現在の nodes から探す
-      // (正確を期すなら getSnapshot() のロジックで全最新データを統合してから探す)
 
       // A. 現在のシート内を検索
       targetNode = nodes.find(
@@ -1064,7 +1004,6 @@ function FlowEditorContent({
 
       // B. 他のシートを検索
       for (const sheet of sheets) {
-        // アクティブシートは A で検索済みなのでスキップ
         if (sheet.id === activeSheetId) continue;
 
         const match = sheet.nodes.find(
@@ -1082,15 +1021,13 @@ function FlowEditorContent({
       }
 
       if (targetNode && targetSheetId) {
-        // 別シートへの移動が必要
         handleSwitchSheet(targetSheetId);
-        // 移動後にフォーカスするためにIDを予約
         setPendingJumpNodeId(targetNode.id);
       } else {
         toast.warning(`Link destination "${sourceLabel}" not found.`);
       }
     },
-    [nodes, sheets, activeSheetId, handleSwitchSheet, focusNode],
+    [nodes, handleSwitchSheet, focusNode],
   );
 
   // --- Event Handler: Node Click ---
@@ -1137,52 +1074,51 @@ function FlowEditorContent({
       // 閾値: クリックした座標
       const threshold = axis === 'x' ? cursorFlow.x : cursorFlow.y;
 
-      setNodes((nds) =>
-        nds.map((node) => {
-          const nodePos = axis === 'x' ? node.position.x : node.position.y;
+      const newNodes = nodes.map((node) => {
+        const nodePos = axis === 'x' ? node.position.x : node.position.y;
 
-          // Case 1: 基準線より「後ろ（右/下）」にあるノードは、そのままズラす
-          if (nodePos >= threshold) {
+        // Case 1: 基準線より「後ろ（右/下）」にあるノードは、そのままズラす
+        if (nodePos >= threshold) {
+          return {
+            ...node,
+            position: {
+              ...node.position,
+              [axis]: nodePos + moveAmount,
+            },
+          };
+        }
+
+        // Case 2: 基準線を「跨いでいる」スイムレーンは、サイズを拡張する
+        // (開始位置 < 閾値 < 終了位置)
+        if (node.type === 'bpmnSwimlane') {
+          const dimensionKey = axis === 'x' ? 'width' : 'height';
+          // 現在のサイズを取得 (styleに保存されている前提)
+          const currentSize =
+            Number(node.style?.[dimensionKey]) ||
+            (axis === 'x' ? SLOT_WIDTH : SLOT_HEIGHT);
+
+          // レーンの終了位置
+          const nodeEnd = nodePos + currentSize;
+
+          if (nodePos < threshold && nodeEnd > threshold) {
             return {
               ...node,
-              position: {
-                ...node.position,
-                [axis]: nodePos + moveAmount,
+              style: {
+                ...node.style,
+                [dimensionKey]: currentSize + moveAmount,
               },
             };
           }
+        }
 
-          // Case 2: 基準線を「跨いでいる」スイムレーンは、サイズを拡張する
-          // (開始位置 < 閾値 < 終了位置)
-          if (node.type === 'bpmnSwimlane') {
-            const dimensionKey = axis === 'x' ? 'width' : 'height';
-            // 現在のサイズを取得 (styleに保存されている前提)
-            const currentSize =
-              Number(node.style?.[dimensionKey]) ||
-              (axis === 'x' ? SLOT_WIDTH : SLOT_HEIGHT);
-
-            // レーンの終了位置
-            const nodeEnd = nodePos + currentSize;
-
-            if (nodePos < threshold && nodeEnd > threshold) {
-              return {
-                ...node,
-                style: {
-                  ...node.style,
-                  [dimensionKey]: currentSize + moveAmount,
-                },
-              };
-            }
-          }
-
-          // Case 3: 基準線より「手前」にあるノードは何もしない
-          return node;
-        }),
-      );
+        // Case 3: 基準線より「手前」にあるノードは何もしない
+        return node;
+      });
+      setNodes(newNodes);
 
       toast.success(`Inserted ${count} ${axis === 'x' ? 'columns' : 'rows'}`);
     },
-    [screenToFlowPosition, setNodes],
+    [screenToFlowPosition, nodes, setNodes],
   );
 
   // ダイアログ経由での実行
@@ -1197,68 +1133,68 @@ function FlowEditorContent({
   // 削除実行の実体 (実際にデータを操作する関数)
   const executeDelete = useCallback(
     (axis: 'x' | 'y', thresholdStart: number, deleteSize: number) => {
-      setNodes((nds) => {
-        // Step A: 削除範囲内に起点があるノードを除外 (完全削除)
-        const remainingNodes = nds.filter((node) => {
-          const pos = axis === 'x' ? node.position.x : node.position.y;
-          // 削除範囲: [thresholdStart, thresholdStart + deleteSize)
-          const isInDeleteZone =
-            pos >= thresholdStart && pos < thresholdStart + deleteSize;
-          return !isInDeleteZone;
-        });
+      // Step A: 削除範囲内に起点があるノードを除外 (完全削除)
+      const remainingNodes = nodes.filter((node) => {
+        const pos = axis === 'x' ? node.position.x : node.position.y;
+        // 削除範囲: [thresholdStart, thresholdStart + deleteSize)
+        const isInDeleteZone =
+          pos >= thresholdStart && pos < thresholdStart + deleteSize;
+        return !isInDeleteZone;
+      });
 
-        // Step B: 残ったノードの位置調整・リサイズ
-        return remainingNodes.map((node) => {
-          const pos = axis === 'x' ? node.position.x : node.position.y;
+      // Step B: 残ったノードの位置調整・リサイズ
+      const finalNodes = remainingNodes.map((node) => {
+        const pos = axis === 'x' ? node.position.x : node.position.y;
 
-          // Case 1: 削除範囲より「後ろ」にあるノードは、手前にズラす
-          if (pos >= thresholdStart + deleteSize) {
+        // Case 1: 削除範囲より「後ろ」にあるノードは、手前にズラす
+        if (pos >= thresholdStart + deleteSize) {
+          return {
+            ...node,
+            position: {
+              ...node.position,
+              [axis]: pos - deleteSize,
+            },
+          };
+        }
+
+        // Case 2: 削除範囲を「跨いでいる」スイムレーンは、サイズを縮小する
+        // (開始位置 < 削除開始 < 終了位置)
+        if (node.type === 'bpmnSwimlane') {
+          const dimensionKey = axis === 'x' ? 'width' : 'height';
+          const currentSize =
+            Number(node.style?.[dimensionKey]) ||
+            (axis === 'x' ? SLOT_WIDTH : SLOT_HEIGHT);
+          const nodeEnd = pos + currentSize;
+
+          // レーンの中に削除範囲が含まれている場合
+          if (pos < thresholdStart && nodeEnd > thresholdStart) {
+            // 縮小後のサイズが最小サイズ(1スロット)を割らないようにガードしても良いが、
+            // ここでは単純に削除分を引く
+            const newSize = Math.max(
+              axis === 'x' ? SLOT_WIDTH : SLOT_HEIGHT,
+              currentSize - deleteSize,
+            );
+
             return {
               ...node,
-              position: {
-                ...node.position,
-                [axis]: pos - deleteSize,
+              style: {
+                ...node.style,
+                [dimensionKey]: newSize,
               },
             };
           }
+        }
 
-          // Case 2: 削除範囲を「跨いでいる」スイムレーンは、サイズを縮小する
-          // (開始位置 < 削除開始 < 終了位置)
-          if (node.type === 'bpmnSwimlane') {
-            const dimensionKey = axis === 'x' ? 'width' : 'height';
-            const currentSize =
-              Number(node.style?.[dimensionKey]) ||
-              (axis === 'x' ? SLOT_WIDTH : SLOT_HEIGHT);
-            const nodeEnd = pos + currentSize;
-
-            // レーンの中に削除範囲が含まれている場合
-            if (pos < thresholdStart && nodeEnd > thresholdStart) {
-              // 縮小後のサイズが最小サイズ(1スロット)を割らないようにガードしても良いが、
-              // ここでは単純に削除分を引く
-              const newSize = Math.max(
-                axis === 'x' ? SLOT_WIDTH : SLOT_HEIGHT,
-                currentSize - deleteSize,
-              );
-
-              return {
-                ...node,
-                style: {
-                  ...node.style,
-                  [dimensionKey]: newSize,
-                },
-              };
-            }
-          }
-
-          // Case 3: 削除範囲より「手前」にあるノードは何もしない
-          return node;
-        });
+        // Case 3: 削除範囲より「手前」にあるノードは何もしない
+        return node;
       });
+
+      setNodes(finalNodes);
 
       toast.success('Deleted space successfully.');
       setDeleteAlertConfig(null); // ダイアログ閉じる
     },
-    [setNodes],
+    [nodes, setNodes],
   );
 
   // 削除の試行 (コンテキストメニューから呼ばれる)
@@ -1445,19 +1381,18 @@ function FlowEditorContent({
           }
           return null;
         })
-        .filter((e) => e !== null);
+        .filter((e) => e !== null) as Edge[];
 
       // C. 反映
-      setNodes((nds) =>
-        nds.map((n) => ({ ...n, selected: false })).concat(newNodes),
-      );
-      setEdges((eds) =>
-        eds.map((e) => ({ ...e, selected: false })).concat(newEdges),
-      );
+      setNodes([...nodes.map((n) => ({ ...n, selected: false })), ...newNodes]);
+      setEdges([
+        ...edges.map((e) => ({ ...e, selected: false })),
+        ...newEdges,
+      ] as Edge[]);
 
       toast.success('Pasted');
     },
-    [clipboard, setNodes, setEdges],
+    [clipboard, nodes, edges, setNodes, setEdges],
   );
 
   // Undo Handler
@@ -1800,13 +1735,10 @@ function FlowEditorContent({
               </div>
 
               <SheetTabs
-                sheets={sheets}
-                activeSheetId={activeSheetId}
-                onSwitch={handleSwitchSheet}
-                onAdd={handleAddSheet}
-                onRemove={handleRemoveSheet}
-                onRename={renameSheet}
-                onReorder={reorderSheets}
+                flowId={id}
+                version={version}
+                navigate={navigate}
+                routeName="/flow/[id]/[version]/edit"
               />
             </main>
           </ContextMenuTrigger>

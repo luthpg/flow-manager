@@ -54,10 +54,9 @@ export class AuthService {
     const users = this.db.getData<UserRow>(SHEET_NAMES.SYSTEM_USERS);
     const targetUser = users.find((u) => u.email === userEmail);
 
-    const userGroups =
-      targetUser?.groups
-        ? targetUser.groups.split(',').map((g) => g.trim())
-        : [];
+    const userGroups = targetUser?.groups
+      ? targetUser.groups.split(',').map((g) => g.trim())
+      : [];
 
     // 検索対象のSubject (自分自身 + 所属グループ)
     const subjects = [userEmail, ...userGroups];
