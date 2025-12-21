@@ -1,8 +1,8 @@
+import type { Edge, Node } from '@xyflow/react';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { Edge, Node } from '@xyflow/react';
-import type { FlowGraphData, FlowSheet } from '~/types/flow';
 import type { RouteNames, RouteParams } from '@/generated/router';
+import type { FlowGraphData, FlowSheet } from '~/types/flow';
 
 type NavigateFunction = any;
 
@@ -62,7 +62,9 @@ export const useFlowStore = create<FlowStoreState & FlowStoreActions>()(
       if (!activeSheetId) return;
 
       set((state) => {
-        const sheetIndex = state.sheets.findIndex((s) => s.id === activeSheetId);
+        const sheetIndex = state.sheets.findIndex(
+          (s) => s.id === activeSheetId,
+        );
         if (sheetIndex !== -1) {
           state.sheets[sheetIndex].nodes = nodes;
           state.sheets[sheetIndex].edges = edges;
@@ -84,7 +86,12 @@ export const useFlowStore = create<FlowStoreState & FlowStoreActions>()(
         const legacyEdges = (initialData as any).edges || [];
         const sheet1Id = '0';
         loadedSheets = [
-          { id: sheet1Id, name: 'Page 1', nodes: legacyNodes, edges: legacyEdges },
+          {
+            id: sheet1Id,
+            name: 'Page 1',
+            nodes: legacyNodes,
+            edges: legacyEdges,
+          },
         ];
         initialActiveId = sheet1Id;
       }
@@ -107,7 +114,11 @@ export const useFlowStore = create<FlowStoreState & FlowStoreActions>()(
       });
 
       if (urlSheetId !== targetId) {
-        navigate(routeName, { ...routeParams, sheetId: targetId }, { replace: true });
+        navigate(
+          routeName,
+          { ...routeParams, sheetId: targetId },
+          { replace: true },
+        );
       }
     },
 
@@ -183,7 +194,7 @@ export const useFlowStore = create<FlowStoreState & FlowStoreActions>()(
     reorderSheets: (newSheets) => {
       set({ sheets: newSheets });
     },
-    
+
     getSnapshot: () => {
       get()._saveCurrentSheet();
       const { sheets, activeSheetId } = get();

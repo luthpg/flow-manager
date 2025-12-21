@@ -1,13 +1,6 @@
+import type { FlowMeta } from '../../types/flow';
 import { APP_CONFIG, SHEET_NAMES } from '../constants';
 import { SheetDB } from '../repository/SheetDB';
-import {
-  generateDraftVersionId,
-  generateReleaseVersionId,
-} from '../utils/version';
-import { AuthService } from './AuthService';
-import type {
-  FlowMeta,
-} from '../../types/flow';
 import {
   type FlowRow,
   type FlowVersionRow,
@@ -16,6 +9,11 @@ import {
   toFlowMeta,
   toFlowVersionDetail,
 } from '../utils/data-mapper';
+import {
+  generateDraftVersionId,
+  generateReleaseVersionId,
+} from '../utils/version';
+import { AuthService } from './AuthService';
 
 export class FlowService {
   private db: SheetDB;
@@ -101,7 +99,9 @@ export class FlowService {
       lock.waitLock(APP_CONFIG.LOCK_WAIT_MS);
 
       // 指定されたバージョンID (ドラフト) を取得
-      const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
+      const versions = this.db.getData<FlowVersionRow>(
+        SHEET_NAMES.FLOW_VERSIONS,
+      );
       const target = versions.find(
         (v) => v.versionId === versionId && v.flowId === flowId,
       );
@@ -149,7 +149,7 @@ export class FlowService {
 
     const flowMeta = toFlowMeta(flowRow);
     const versionDetail = toFlowVersionDetail(targetVersionRow);
-    
+
     // JSON結合
     const jsonString = joinJsonChunks(targetVersionRow);
 
@@ -187,8 +187,9 @@ export class FlowService {
       }
 
       // まず更新データを適用 (グラフデータがある場合)
-      if (Object.keys(updateData).length > 1) { // updatedAt以外がある場合
-         this.db.update(
+      if (Object.keys(updateData).length > 1) {
+        // updatedAt以外がある場合
+        this.db.update(
           SHEET_NAMES.FLOW_VERSIONS,
           'versionId',
           currentVersionId,
@@ -196,7 +197,9 @@ export class FlowService {
         );
       }
 
-      const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
+      const versions = this.db.getData<FlowVersionRow>(
+        SHEET_NAMES.FLOW_VERSIONS,
+      );
       const targetVersion = versions.find(
         (v) => v.versionId === currentVersionId,
       );
@@ -220,17 +223,12 @@ export class FlowService {
         : `[Approved by ${approverEmail}]: ${comment}`;
 
       // ID書き換えとステータス更新
-      this.db.update(
-        SHEET_NAMES.FLOW_VERSIONS,
-        'versionId',
-        currentVersionId,
-        {
-          versionId: newVersionId,
-          status: 'PUBLISHED',
-          comment: newComment,
-          updatedAt: new Date(),
-        },
-      );
+      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'versionId', currentVersionId, {
+        versionId: newVersionId,
+        status: 'PUBLISHED',
+        comment: newComment,
+        updatedAt: new Date(),
+      });
 
       // 親情報の更新
       this.db.update(SHEET_NAMES.FLOWS, 'flowId', flowId, {
@@ -263,7 +261,9 @@ export class FlowService {
       lock.waitLock(APP_CONFIG.LOCK_WAIT_MS);
 
       // 1. 対象バージョンの確認
-      const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
+      const versions = this.db.getData<FlowVersionRow>(
+        SHEET_NAMES.FLOW_VERSIONS,
+      );
       const targetVersion = versions.find((v) => v.versionId === versionId);
 
       if (!targetVersion) throw new Error('Target version not found.');

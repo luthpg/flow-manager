@@ -1,22 +1,20 @@
 import {
-  Controls,
-  MarkerType,
-  MiniMap,
-  ReactFlow,
-  ReactFlowProvider,
-  SelectionMode,
-  type Connection,
-  type Edge,
-  type EdgeChange,
-  type Node,
-  type NodeChange,
-} from '@xyflow/react';
-import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   Background,
   BackgroundVariant,
+  type Connection,
+  Controls,
+  type Edge,
+  type EdgeChange,
+  MarkerType,
+  MiniMap,
+  type Node,
+  type NodeChange,
+  ReactFlow,
+  ReactFlowProvider,
+  SelectionMode,
   useReactFlow,
 } from '@xyflow/react';
 import type React from 'react';
@@ -289,8 +287,7 @@ function FlowEditorContent({
   const [deleteCountInput, setDeleteCountInput] = useState(1);
 
   // History Management Hook
-  const { takeSnapshot, undo, redo } =
-    useChangeHistory(activeSheetId);
+  const { takeSnapshot, undo, redo } = useChangeHistory(activeSheetId);
 
   // --- Node Types Definition ---
   const nodeTypes = useMemo(

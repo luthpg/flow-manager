@@ -1,3 +1,4 @@
+import type { useNavigate } from '@ciderjs/city-gas/react';
 import {
   closestCenter,
   DndContext,
@@ -17,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { MoreVertical, Pencil, Plus, X } from 'lucide-react';
 import { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,13 +27,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
-import type { FlowSheet } from '~/types/flow';
-import { useFlowStore } from '@/stores/flow-store';
-import { useShallow } from 'zustand/react/shallow';
 import type { RouteNames } from '@/generated/router';
+import { cn } from '@/lib/utils';
+import { useFlowStore } from '@/stores/flow-store';
+import type { FlowSheet } from '~/types/flow';
 
-type NavigateFunction = any;
+type NavigateFunction = ReturnType<typeof useNavigate>;
 
 // --- Props Definition ---
 interface SheetTabsProps {
@@ -60,15 +61,14 @@ const SortableTabItem = ({
   routeName,
   readOnly,
 }: SortableTabItemProps) => {
-  const { activeSheetId, switchSheet, removeSheet, renameSheet } =
-    useFlowStore(
-      useShallow((state) => ({
-        activeSheetId: state.activeSheetId,
-        switchSheet: state.switchSheet,
-        removeSheet: state.removeSheet,
-        renameSheet: state.renameSheet,
-      })),
-    );
+  const { activeSheetId, switchSheet, removeSheet, renameSheet } = useFlowStore(
+    useShallow((state) => ({
+      activeSheetId: state.activeSheetId,
+      switchSheet: state.switchSheet,
+      removeSheet: state.removeSheet,
+      renameSheet: state.renameSheet,
+    })),
+  );
 
   const {
     attributes,
@@ -261,4 +261,3 @@ export const SheetTabs = ({
     </div>
   );
 };
-

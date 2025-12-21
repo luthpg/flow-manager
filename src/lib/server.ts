@@ -9,7 +9,6 @@ import type { FlowData, FlowMeta } from '~/types/flow';
 const mockResponse = <T>(data: T): string =>
   JSON.stringify({ success: true, data });
 
-
 // mockData.ts
 export const mockFlows: FlowMeta[] = [
   {

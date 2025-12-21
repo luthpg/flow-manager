@@ -1,9 +1,4 @@
-import type {
-  FlowData,
-  FlowGraphData,
-  FlowMeta,
-  Role,
-} from '~/types/flow';
+import type { FlowData, FlowGraphData, FlowMeta, Role } from '~/types/flow';
 import { AuthService } from './service/AuthService';
 import { FlowService } from './service/FlowService';
 import { response } from './utils/response';

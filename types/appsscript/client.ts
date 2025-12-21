@@ -82,7 +82,7 @@ export type ServerScripts = {
   generateDraftVersionId(email: string): string;
 
   generateReleaseVersionId(existingVersions: string[]): string;
-}
+};
 
 // Auto-generated Types for GoogleAppsScript in client-side code
 
