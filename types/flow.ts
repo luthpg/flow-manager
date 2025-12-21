@@ -4,6 +4,22 @@ import type { Edge, Node } from '@xyflow/react';
 export type FlowStatus = 'DRAFT' | 'PENDING' | 'PUBLISHED' | 'REJECTED';
 export type Role = 'VIEWER' | 'EDITOR' | 'APPROVER' | 'ADMIN';
 
+export interface Folder {
+  folderId: string;
+  name: string;
+  parentId?: string;
+}
+
+export type FolderRole = 'VIEWER' | 'EDITOR' | 'OWNER';
+
+export interface FolderPermission {
+  permissionId: string;
+  folderId: string;
+  email: string;
+  role: FolderRole;
+  avatarUrl?: string; // Optional for UI
+}
+
 // --- 1枚のシートの定義 ---
 export interface FlowSheet {
   id: string;
@@ -58,5 +74,12 @@ export interface FlowVersionDetail {
   status: FlowStatus;
   comment: string;
   createdBy: string;
+  createdAt: string;
+}
+
+export interface FlowVersion {
+  versionId: string;
+  versionNum: number;
+  status: FlowStatus;
   createdAt: string;
 }

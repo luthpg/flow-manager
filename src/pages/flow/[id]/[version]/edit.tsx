@@ -934,7 +934,7 @@ function FlowEditorContent({
 
   const handleExportJson = useCallback(() => {
     // 現在のノードとエッジ、メタデータをJSON化
-    const exportData: FlowData = {
+    const exportData: Omit<FlowData, 'version'> = {
       meta: {
         folderId,
         flowId: id,

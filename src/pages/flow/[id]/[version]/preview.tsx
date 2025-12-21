@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   Diff,
   FileText,
-  GitPullRequestArrow,
   History,
   Loader2,
   MessageSquare,
@@ -40,6 +39,7 @@ import {
   BpmnTaskNode,
   BpmnTimerEventNode,
 } from '@/components/custom-nodes';
+import { DiffSidebar } from '@/components/flow/diff-sidebar';
 import { ModeToggle } from '@/components/mode-toggle';
 import { SheetTabs } from '@/components/sheet-tabs';
 import { useTheme } from '@/components/theme-provider';
@@ -52,7 +52,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -64,7 +63,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Toggle } from '@/components/ui/toggle';
 import useIsMobile from '@/hooks/is-mobile';
@@ -75,7 +73,6 @@ import {
   resolveDiff,
 } from '@/lib/diff-utils';
 import { serverScripts } from '@/lib/server';
-import { cn } from '@/lib/utils';
 import { useFlowStore } from '@/stores/flow-store';
 import type { ApiResponse } from '~/types/appsscript/server';
 import type { FlowData, FlowGraphData, FlowStatus, Role } from '~/types/flow';
@@ -268,11 +265,10 @@ function ViewerContent({
   const [userRole, setUserRole] = useState<Role>('VIEWER');
   const [historyList, setHistoryList] = useState<HistoryItem[]>([]);
 
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [isDiffMode, setIsDiffMode] = useState(false);
-  // const [diffChanges, setDiffChanges] = useState<Record<string, any>>({});
-  const [diffDecisions, setDiffDecisions] = useState<
-    Record<string, DiffDecision>
-  >({});
+  const [diffDecisions] = useState<Record<string, DiffDecision>>({});
 
   // Diff表示用データ (計算結果を保持)
   const diffDataRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
@@ -441,65 +437,12 @@ function ViewerContent({
     [isDiffMode, navigate, id, version, switchSheet],
   );
 
-  // ▼ 判定切り替えハンドラ
-  const handleToggleDecision = (targetId: string, accepted: boolean) => {
-    const newDecisions: Record<string, DiffDecision> = {
-      ...diffDecisions,
-      [targetId]: accepted ? 'accepted' : 'rejected',
-    };
-    setDiffDecisions(newDecisions);
-
-    // プレビューの更新
-    if (rawDiffResult) {
-      const updatedNodes = rawDiffResult.nodes.map((n) => {
-        const decision = newDecisions[n.id] || 'accepted';
-        const status = n.data._diff as DiffStatus;
-
-        if (decision === 'rejected') {
-          if (status === 'added') return { ...n, hidden: true };
-          if (status === 'deleted')
-            return {
-              ...n,
-              style: {
-                ...n.style,
-                opacity: 1,
-                borderStyle: 'solid',
-                borderColor: 'transparent',
-              },
-            };
-          if (status === 'modified') {
-            const original = rawDiffResult.baseNodes.find(
-              (bn) => bn.id === n.id,
-            );
-            return original ? { ...original, position: n.position } : n;
-          }
-        }
-        return n;
-      });
-      setPreviewNodes(updatedNodes);
-
-      // Storeにも反映 (Diffモード中なら)
-      if (isDiffMode) {
-        // スタイル適用
-        const styledNodes = updatedNodes.map((n) => {
-          const status = n.data._diff as DiffStatus;
-          if (!status || status === 'unchanged') return n;
-          // Rejected (hidden or reverted) なものはスタイル適用不要あるいはhidden
-          if (n.hidden) return n;
-
-          // RejectedでなければDiffスタイルを適用
-          return {
-            ...n,
-            style: {
-              ...n.style,
-              ...getDiffStyle(status, resolvedTheme === 'dark'),
-            },
-          };
-        });
-        setNodes(styledNodes);
-      }
-    }
-  };
+  /* handleToggleDecision is moved to DiffSidebar logic or unused if sidebar handles it internally. 
+     Wait, DiffSidebar does NOT have individual item toggle in standard prop interface I defined?
+     Let's check DiffSidebar props: onApprove, onReject. It does NOT have per-node toggle. 
+     The Requirement was "Comment with Approve/Reject". The per-node toggle was in my old logic.
+     I deleted the old sidebar code in render(), so this function is indeed dead code.
+  */
 
   // --- Actions (Approve / Reject) ---
   const handleAction = async (action: 'approve' | 'reject') => {
@@ -617,6 +560,7 @@ function ViewerContent({
           ...n,
           style: {
             ...n.style,
+            // ...getDiffStyle(status, resolvedTheme === 'dark'), // Keep getDiffStyle logic if needed
             ...getDiffStyle(status, resolvedTheme === 'dark'),
           },
         };
@@ -636,11 +580,23 @@ function ViewerContent({
 
       setNodes(styledNodes);
       setEdges(styledEdges);
-      setTimeout(() => fitView(), 50);
+      setTimeout(() => fitView({ padding: 0.2 }), 50);
+
+      // Auto-open sidebar when diff mode is enabled
+      // The Sidebar logic is handled in the render return
     } else if (originalGraph) {
       // 通常モードに戻す (Original Graph data)
       setNodes(originalGraph.nodes);
       setEdges(originalGraph.edges);
+    }
+  };
+
+  // Highlight helper for list items
+  const handleSelectDiffNode = (nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    const node = nodes.find((n) => n.id === nodeId);
+    if (node) {
+      fitView({ nodes: [node], duration: 800, padding: 2 }); // Zoom to node
     }
   };
 
@@ -697,14 +653,10 @@ function ViewerContent({
           </div>
         </div>
 
-        {flowStatus === 'PENDING' && (
-          <div className="flex items-center gap-2 ml-auto"></div>
-        )}
-
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <ModeToggle />
 
-          {/* ▼ Edit Button (権限がある場合のみ表示) */}
+          {/* Edit Button */}
           {(userRole === 'EDITOR' ||
             userRole === 'APPROVER' ||
             userRole === 'ADMIN') && (
@@ -734,90 +686,26 @@ function ViewerContent({
                   <span className="text-xs font-bold">Diff View</span>
                 </Toggle>
 
-                {/* Reject Dialog */}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="destructive"
-                      className="gap-2 shadow-sm"
-                      disabled={isActionProcessing}
-                    >
-                      <XCircle className="w-4 h-4" /> 否認
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>否認しますか？</DialogTitle>
-                      <DialogDescription>
-                        否認理由を入力してください。申請者に通知され、ステータスは「REJECTED」になります。
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4">
-                      <Textarea
-                        placeholder="修正依頼コメント..."
-                        value={actionComment}
-                        onChange={(e) => setActionComment(e.target.value)}
-                      />
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline">キャンセル</Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => handleAction('reject')}
-                        disabled={isActionProcessing}
-                      >
-                        {isActionProcessing && (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        )}{' '}
-                        否認を実行
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                {/* Legacy Header Buttons - synced with new state */}
+                <Button
+                  variant="destructive"
+                  className="gap-2 shadow-sm"
+                  disabled={isActionProcessing}
+                  onClick={() => setRejectDialogOpen(true)}
+                >
+                  <XCircle className="w-4 h-4" /> 否認
+                </Button>
 
-                {/* Approve Dialog */}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button
-                      className="gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                      disabled={isActionProcessing}
-                    >
-                      <CheckCircle2 className="w-4 h-4" /> 承認
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>承認・公開しますか？</DialogTitle>
-                      <DialogDescription>
-                        このバージョンを正式版として公開します。
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4">
-                      <Label>承認コメント (任意)</Label>
-                      <Textarea
-                        placeholder="承認します。"
-                        className="mt-2"
-                        value={actionComment}
-                        onChange={(e) => setActionComment(e.target.value)}
-                      />
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline">キャンセル</Button>
-                      <Button
-                        className="bg-blue-600 text-white hover:bg-blue-700"
-                        onClick={() => handleAction('approve')}
-                        disabled={isActionProcessing}
-                      >
-                        {isActionProcessing && (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        )}{' '}
-                        承認して公開
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <Button
+                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                  disabled={isActionProcessing}
+                  onClick={() => setApproveDialogOpen(true)}
+                >
+                  <CheckCircle2 className="w-4 h-4" /> 承認
+                </Button>
               </div>
             )}
+
           {isMobile && (
             <Sheet open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
               <SheetTrigger asChild>
@@ -845,145 +733,173 @@ function ViewerContent({
         </div>
       </header>
 
-      {/* --- Main Viewer Area --- */}
+      {/* --- Main Content Area (Canvas + Sidebars) --- */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* --- Canvas --- */}
-        <main className="flex-1 flex flex-col relative bg-muted/20">
+        <div className="flex-1 relative flex flex-col">
           <div className="flex-1 relative">
             <ReactFlow
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
-              nodesDraggable={false}
-              nodesConnectable={false}
+              nodesDraggable={false} // Viewer
+              nodesConnectable={false} // Viewer
               elementsSelectable={true}
               onSelectionChange={onSelectionChange}
               colorMode={resolvedTheme}
               fitView
               minZoom={0.2}
               maxZoom={3.0}
+              proOptions={{ hideAttribution: true }}
+              className="bg-muted/10 transition-colors duration-300"
             >
               <Background
                 color={isDark ? '#334155' : '#e2e8f0'}
                 gap={20}
                 size={1}
               />
+              <Controls showInteractive={false} />
+              <MiniMap
+                maskColor={maskColor}
+                nodeStrokeColor={(n) => {
+                  const status = n.data._diff as DiffStatus;
+                  if (status === 'added') return '#3b82f6';
+                  if (status === 'deleted') return '#ef4444';
+                  if (status === 'modified') return '#22c55e';
+                  return isDark ? '#fff' : '#000';
+                }}
+                nodeColor={(n) => {
+                  const status = n.data._diff as DiffStatus;
+                  if (status === 'added') return '#dbeafe';
+                  if (status === 'deleted') return '#fee2e2';
+                  if (status === 'modified') return '#dcfce7';
+                  return isDark ? '#333' : '#fff';
+                }}
+              />
 
-              {!isMobile && (
-                <>
-                  <Controls
-                    className={cn(
-                      'bg-card! border! border-border! shadow-sm! rounded-md! p-1!',
-                      '[&>button]:bg-transparent! [&>button]:border-none! [&>button]:text-muted-foreground!',
-                      '[&>button:hover]:bg-accent! [&>button:hover]:text-accent-foreground!',
-                      '[&>button>svg]:fill-current!',
-                    )}
-                  />
-                  <MiniMap
-                    className={cn(
-                      'bg-card! border! border-border! shadow-sm! rounded-md!',
-                      'bottom-1! right-1!',
-                    )}
-                    maskColor={maskColor}
-                    nodeClassName={(node) => {
-                      if (node.type === 'bpmnSwimlane') {
-                        return cn(
-                          'fill-muted/30!',
-                          'stroke-border/50!',
-                          'dark:fill-muted/20"',
-                        );
-                      }
-                      return cn('fill-primary!', 'stroke-transparent!');
-                    }}
-                    zoomable
-                    pannable
-                  />
-                </>
+              {/* Visual Legend for Diff Mode */}
+              {isDiffMode && (
+                <div className="absolute top-4 left-4 bg-background/90 backdrop-blur border border-border p-3 rounded-lg shadow-sm z-10 text-xs space-y-2 pointer-events-none select-none">
+                  <div className="font-semibold mb-1">Diff Legend</div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-blue-100 border border-blue-500 border-dashed"></div>{' '}
+                    Added
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-green-100 border border-green-500 border-solid border-[3px]"></div>{' '}
+                    Modified
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-red-100 border border-red-500 border-dotted"></div>{' '}
+                    Deleted
+                  </div>
+                </div>
               )}
             </ReactFlow>
           </div>
 
-          {/* Footer Tabs (Responsive) */}
           <SheetTabs
-            sheets={sheets}
-            activeSheetId={activeSheetId}
-            onSwitch={handleSwitchSheet}
-            onAdd={() => {}}
-            onRemove={() => {}}
-            onRename={() => {}}
-            onReorder={() => {}}
+            flowId={id}
+            version={version}
+            routeName={'/flow/[id]/[version]/preview'}
+            navigate={navigate}
             readOnly={true}
           />
-        </main>
+        </div>
 
-        {/* --- Desktop Sidebar (Hidden on Mobile) --- */}
-        <aside className="hidden md:flex w-80 bg-sidebar border-l border-sidebar-border flex-col z-10 shadow-xl">
-          <ScrollArea className="flex-1">
-            {isDiffMode && (
-              <div className="p-4 border-b">
-                <h3 className="font-semibold mb-2 flex items-center gap-2">
-                  <GitPullRequestArrow className="w-4 h-4" />
-                  Review Changes
-                </h3>
-                <ScrollArea className="h-64">
-                  <div className="space-y-2">
-                    {/* 変更点リスト */}
-                    {previewNodes
-                      .filter(
-                        (n) => n.data._diff && n.data._diff !== 'unchanged',
-                      )
-                      .map((node) => {
-                        const status = node.data._diff as string;
-                        const isAccepted =
-                          (diffDecisions[node.id] ?? 'accepted') === 'accepted';
-
-                        return (
-                          <div
-                            key={node.id}
-                            className="flex items-center justify-between p-2 bg-muted/30 rounded border text-xs"
-                          >
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              <StatusIcon status={status} />
-                              <span className="truncate max-w-[100px] font-medium">
-                                {node.data.label || node.id}
-                              </span>
-                            </div>
-
-                            {/* 採用/不採用スイッチ */}
-                            <div className="flex items-center gap-1">
-                              <span
-                                className={cn(
-                                  'text-[10px]',
-                                  isAccepted
-                                    ? 'text-muted-foreground'
-                                    : 'text-red-500 font-bold',
-                                )}
-                              >
-                                {isAccepted ? 'Apply' : 'Revert'}
-                              </span>
-                              <Switch
-                                checked={isAccepted}
-                                onCheckedChange={(c) =>
-                                  handleToggleDecision(node.id, c)
-                                }
-                                className="scale-75"
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-
+        {/* --- Right Sidebar (Diff or Details) --- */}
+        {isDiffMode ? (
+          <DiffSidebar
+            diffNodes={previewNodes}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={handleSelectDiffNode}
+            onApprove={() => setApproveDialogOpen(true)}
+            onReject={() => setRejectDialogOpen(true)}
+            isActionProcessing={isActionProcessing}
+          />
+        ) : (
+          <div className="hidden lg:block w-80 border-l border-border bg-background shrink-0 overflow-y-auto">
             <ViewerSidebarContent
               selectedNode={selectedNode}
               historyList={historyList}
             />
-          </ScrollArea>
-        </aside>
+          </div>
+        )}
       </div>
+
+      {/* Dialogs */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Changes?</DialogTitle>
+            <DialogDescription>
+              Provide a reason for rejection. The requester will be notified.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              placeholder="Reason for rejection..."
+              value={actionComment}
+              onChange={(e) => setActionComment(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRejectDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => handleAction('reject')}
+              disabled={isActionProcessing}
+            >
+              {isActionProcessing && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}{' '}
+              Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve & Publish</DialogTitle>
+            <DialogDescription>
+              This version will be published as the new active version.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>Approval Comment (Optional)</Label>
+            <Textarea
+              placeholder="Looks good!"
+              className="mt-2"
+              value={actionComment}
+              onChange={(e) => setActionComment(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setApproveDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => handleAction('approve')}
+              disabled={isActionProcessing}
+            >
+              {isActionProcessing && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}{' '}
+              Approve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1073,25 +989,9 @@ function parseHistory(
   return items.reverse();
 }
 
-// Helper Icon
-const StatusIcon = ({ status }: { status: string }) => {
-  if (status === 'added')
-    return (
-      <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 px-1 py-0 text-[10px]">
-        Add
-      </Badge>
-    );
-  if (status === 'deleted')
-    return (
-      <Badge className="bg-red-100 text-red-700 hover:bg-red-100 px-1 py-0 text-[10px]">
-        Del
-      </Badge>
-    );
-  if (status === 'modified')
-    return (
-      <Badge className="bg-green-100 text-green-700 hover:bg-green-100 px-1 py-0 text-[10px]">
-        Mod
-      </Badge>
-    );
-  return null;
-};
+// StatusIcon removed
+/* 
+   If handleSwitchSheet is unused, it means SheetTabs is missing from JSX.
+   I need to ensure SheetTabs is present. 
+   I will view the file to confirm.
+*/

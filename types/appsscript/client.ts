@@ -29,6 +29,41 @@ export type ServerScripts = {
   getFlows(): string;
 
   /**
+   * フォルダ一覧取得
+   */
+  getFolders(): string;
+
+  /**
+   * フォルダ権限一覧取得
+   */
+  getFolderPermissions(folderId: string): string;
+
+  /**
+   * フォルダ権限追加
+   */
+  addFolderPermission(folderId: string, email: string, role: string): string;
+
+  /**
+   * フォルダ権限削除
+   */
+  removeFolderPermission(permissionId: string): string;
+
+  /**
+   * フォルダ権限更新
+   */
+  updateFolderPermission(permissionId: string, role: string): string;
+
+  /**
+   * フローのバージョン履歴（サマリ）取得
+   */
+  getFlowVersions(flowId: string): string;
+
+  /**
+   * サーバーサイド横断検索
+   */
+  searchFlows(query: string): string;
+
+  /**
    * 編集画面・閲覧画面データ取得
    * - 必須: flowId, versionId
    */

@@ -1,126 +1,187 @@
-import { useNavigate } from '@ciderjs/city-gas/react';
-import { formatDistanceToNow } from 'date-fns';
-// import { ja } from 'date-fns/locale';
 import { FileSpreadsheet, Menu, Plus, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { FlowCard } from '@/components/dashboard/FlowCard';
+import { ShareDialog } from '@/components/dashboard/ShareDialog'; // NEW
+import { Sidebar } from '@/components/dashboard/Sidebar';
+import { ModeToggle } from '@/components/mode-toggle';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { serverScripts } from '@/lib/server';
 import type { ApiResponse } from '~/types/appsscript/server';
-import type { FlowMeta, FlowStatus } from '~/types/flow';
-
-// ステータスに応じたバッジのデザイン定義
-const getStatusBadge = (status: FlowStatus) => {
-  switch (status) {
-    case 'PUBLISHED':
-      return (
-        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-emerald-200">
-          公開中
-        </Badge>
-      );
-    case 'PENDING':
-      return (
-        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-200 border-amber-200">
-          申請中
-        </Badge>
-      );
-    case 'DRAFT':
-      return (
-        <Badge className="bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200">
-          下書き
-        </Badge>
-      );
-    case 'REJECTED':
-      return <Badge variant="destructive">否認</Badge>;
-    default:
-      return <Badge variant="outline">不明</Badge>;
-  }
-};
+import type { FlowMeta, Folder } from '~/types/flow';
 
 export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [flows, setFlows] = useState<FlowMeta[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
+  // Share Dialog State
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareFolderId, setShareFolderId] = useState<string | null>(null);
+
+  // Initial Data Fetch
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initial loading
   useEffect(() => {
     (async () => {
-      const json = await serverScripts.getFlows();
-      const res = JSON.parse(json) as ApiResponse<FlowMeta[]>;
-      if (res.data != null) {
-        setFlows(res.data);
-      }
+      // Fetch Folders
+      const foldersJson = await serverScripts.getFolders();
+      const foldersRes = JSON.parse(foldersJson) as ApiResponse<Folder[]>;
+      if (foldersRes.data) setFolders(foldersRes.data);
+
+      // Fetch Flows (Initial All)
+      loadFlows();
     })();
   }, []);
 
-  // 検索フィルター処理
-  const filteredFlows = flows.filter((flow) =>
-    flow.title.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const loadFlows = async () => {
+    setLoading(true);
+    const json = await serverScripts.getFlows();
+    const res = JSON.parse(json) as ApiResponse<FlowMeta[]>;
+    if (res.data != null) {
+      setFlows(res.data);
+    }
+    setLoading(false);
+  };
+
+  // Server-side Search
+  // biome-ignore lint/correctness/useExhaustiveDependencies: search term change
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (searchTerm.trim()) {
+        setLoading(true);
+        const json = await serverScripts.searchFlows(searchTerm);
+        const res = JSON.parse(json) as ApiResponse<FlowMeta[]>;
+        if (res.data) setFlows(res.data);
+        setLoading(false);
+      } else {
+        // Reset to all flows (or filtered by folder if we combine logics)
+        // For now, simple reset to all flows, then applying client-side folder filter
+        loadFlows();
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const handleShareFolder = (folderId: string) => {
+    setShareFolderId(folderId);
+    setShareDialogOpen(true);
+  };
+
+  const getFolderName = (id: string | null) => {
+    if (!id) return '';
+    return folders.find((f) => f.folderId === id)?.name || '';
+  };
+
+  // Client-side Folder Filtering
+  // (Note: ideally server would handle this, but for now we filter the displayed flows)
+  const displayedFlows = flows.filter((flow) => {
+    if (selectedFolderId) return flow.folderId === selectedFolderId;
+    return true;
+  });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen bg-background text-foreground font-sans flex flex-col transition-colors duration-300">
       {/* --- Top App Bar (Header) --- */}
-      <header className="sticky top-0 z-30 flex items-center justify-between w-full h-16 px-4 bg-white border-b border-slate-200 shadow-sm">
+      <header className="sticky top-0 z-30 flex items-center justify-between w-full h-16 px-4 bg-background/95 backdrop-blur border-b border-border shadow-sm shrink-0">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="text-slate-500">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-slate-500 md:hidden"
+          >
             <Menu className="w-6 h-6" />
           </Button>
-          <h1 className="text-xl font-medium text-slate-700 hidden sm:block">
-            Flowchart Manager
-          </h1>
-        </div>
-
-        {/* Search Bar: 中央配置 & Material Design風の角丸 */}
-        <div className="flex-1 max-w-2xl mx-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <Input
-              type="text"
-              placeholder="Search flows..."
-              className="pl-10 h-11 bg-slate-100 border-none rounded-full focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:bg-white transition-colors"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+              FM
+            </div>
+            <h1 className="text-xl font-medium text-foreground hidden sm:block">
+              Flowchart Manager
+            </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* User Avatar */}
-          <Avatar className="w-9 h-9 cursor-pointer hover:ring-2 hover:ring-slate-200">
-            <AvatarImage src="https://github.com/shadcn.png" alt="@user" />
-            <AvatarFallback>USER</AvatarFallback>
-          </Avatar>
+        {/* Search Bar */}
+        <div className="hidden md:flex relative w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            className="pl-9 h-9 bg-muted/50 border-input focus:bg-background transition-colors"
+            placeholder="Search flows..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
+        <ModeToggle />
+        <Button
+          onClick={() => handleShareFolder(selectedFolderId || 'root')}
+          variant="outline"
+          size="sm"
+          className="hidden sm:flex"
+        >
+          Folder Permissions
+        </Button>
+        <Button
+          size="sm"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="hidden sm:inline">New Flow</span>
+        </Button>
+        <Avatar className="w-8 h-8 border border-border">
+          <AvatarImage src="/placeholder-user.jpg" />
+          <AvatarFallback className="bg-muted text-muted-foreground text-xs">
+            U
+          </AvatarFallback>
+        </Avatar>
       </header>
 
-      {/* --- Main Content --- */}
-      <main className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto">
-        {/* Grid Layout for Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {filteredFlows.map((flow) => (
-            <FlowCard key={flow.flowId} flow={flow} />
-          ))}
-        </div>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar
+          folders={folders}
+          selectedFolderId={selectedFolderId}
+          onSelectFolder={setSelectedFolderId}
+          onShareFolder={handleShareFolder}
+        />
 
-        {/* Empty State */}
-        {filteredFlows.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-            <FileSpreadsheet className="w-12 h-12 mb-2 opacity-20" />
-            <p>No flows found matching "{searchTerm}"</p>
+        {/* --- Main Content --- */}
+        <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
+          {/* Grid Layout for Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
+            {displayedFlows.map((flow) => (
+              <FlowCard key={flow.flowId} flow={flow} />
+            ))}
           </div>
-        )}
-      </main>
+
+          {/* Empty State */}
+          {!loading && displayedFlows.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+              <FileSpreadsheet className="w-12 h-12 mb-2 opacity-20" />
+              <p>No flows found</p>
+              {searchTerm && <p className="text-sm">Matching "{searchTerm}"</p>}
+              {selectedFolderId && (
+                <p className="text-sm">
+                  In folder "
+                  {folders.find((f) => f.folderId === selectedFolderId)?.name}"
+                </p>
+              )}
+            </div>
+          )}
+
+          {loading && (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* --- Floating Action Button (FAB) --- */}
-      {/* Material Design 3 スタイル: 大きめのシャドウ、角丸、アクセントカラー */}
-      <div className="fixed bottom-8 right-8">
+      <div className="fixed bottom-8 right-8 z-40">
         <Button
           size="lg"
           className="w-14 h-14 rounded-2xl bg-blue-600 hover:bg-blue-700 shadow-xl transition-transform hover:scale-105 active:scale-95 p-0 grid place-items-center"
@@ -129,66 +190,16 @@ export default function Dashboard() {
           <Plus className="w-8 h-8 text-white" />
         </Button>
       </div>
+
+      {/* Share Dialog */}
+      {shareFolderId && (
+        <ShareDialog
+          open={shareDialogOpen}
+          onOpenChange={setShareDialogOpen}
+          folderId={shareFolderId}
+          folderName={getFolderName(shareFolderId)}
+        />
+      )}
     </div>
-  );
-}
-
-// --- Sub Component: Flow Card ---
-function FlowCard({ flow }: { flow: FlowMeta }) {
-  const navigate = useNavigate();
-  return (
-    <Card
-      className="group cursor-pointer overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 rounded-xl flex flex-col h-[260px]"
-      onClick={() =>
-        navigate('/flow/[id]/[version]/preview', {
-          id: flow.flowId,
-          version: flow.versionId,
-        })
-      }
-    >
-      {/* Thumbnail Area (Mock) */}
-      <div className="h-36 bg-slate-50 relative border-b border-slate-100 flex items-center justify-center overflow-hidden">
-        {/* 実際の実装ではここにサムネイル画像を表示 */}
-        {/* パターン背景などで図面っぽさを演出 */}
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: 'radial-gradient(#475569 1px, transparent 1px)',
-            backgroundSize: '10px 10px',
-          }}
-        ></div>
-        {/* フロー図のアイコン（プレースホルダー） */}
-        <div className="w-24 h-16 border-2 border-slate-300 rounded-md flex items-center justify-center bg-white shadow-sm group-hover:scale-105 transition-transform">
-          <div className="w-2 h-2 rounded-full bg-slate-300 mr-2"></div>
-          <div className="w-8 h-0.5 bg-slate-300"></div>
-          <div className="w-2 h-2 rounded-sm bg-slate-300 ml-2"></div>
-        </div>
-      </div>
-
-      {/* Card Content */}
-      <CardHeader className="p-4 pb-2 space-y-0">
-        <div className="flex justify-between items-start">
-          <h3
-            className="font-medium text-slate-900 truncate pr-2"
-            title={flow.title}
-          >
-            {flow.title}
-          </h3>
-        </div>
-      </CardHeader>
-
-      <CardContent className="px-4 py-1">
-        {getStatusBadge(flow.currentStatus)}
-      </CardContent>
-
-      <CardFooter className="p-4 mt-auto flex justify-between items-center text-xs text-slate-500">
-        <span>
-          Last updated:{' '}
-          {formatDistanceToNow(new Date(flow.updatedAt), {
-            addSuffix: true,
-          })}
-        </span>
-      </CardFooter>
-    </Card>
   );
 }
