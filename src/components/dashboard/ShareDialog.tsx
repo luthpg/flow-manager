@@ -1,6 +1,5 @@
 import { Loader2, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { z } from 'zod'; // Keep zod for validation if needed, or manual
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -61,6 +60,7 @@ export function ShareDialog({
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: functions are not reactive
   useEffect(() => {
     if (open) {
       fetchPermissions();

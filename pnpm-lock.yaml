@@ -12,8 +12,8 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))(vue@3.5.25(typescript@5.9.3))(zod@4.2.1)
       '@ciderjs/gasnuki':
-        specifier: ^0.3.3
-        version: 0.3.3(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))
+        specifier: ^0.3.4
+        version: 0.3.4(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -339,8 +339,8 @@ packages:
       react-dom:
         optional: true
 
-  '@ciderjs/gasnuki@0.3.3':
-    resolution: {integrity: sha512-sPMsm0NwbxOcPtRg0L3Xa0cTUKbHZqV/wWFEL58wcCMrZE9J75tS9uBY2DIlLYDjpK2b29zM2/IJ1GfMN4V4sw==}
+  '@ciderjs/gasnuki@0.3.4':
+    resolution: {integrity: sha512-/cmH+L+4pXzKcJYCZqygV5t2OuLpS2VQmj1Dq+Z9kv44TYfBt2OcZaEY7qFW3772bctY1Gns/MrR+CQ6/7gQFg==}
     hasBin: true
     peerDependencies:
       vite: ^7
@@ -4340,7 +4340,7 @@ snapshots:
     optionalDependencies:
       react-dom: 19.2.3(react@19.2.3)
 
-  '@ciderjs/gasnuki@0.3.3(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))':
+  '@ciderjs/gasnuki@0.3.4(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1))':
     dependencies:
       chokidar: 5.0.0
       commander: 14.0.2
