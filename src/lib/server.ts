@@ -1,19 +1,17 @@
+import { serialize } from '@ciderjs/gasnuki/json';
 import {
   getPromisedServerScripts,
   type PartialScriptType,
 } from '@ciderjs/gasnuki/promise';
-import type { ServerScripts } from '~/types/appsscript/client';
+import type { PermissionRow, ServerScripts } from '~/types/appsscript/client';
 import type {
   FlowData,
   FlowMeta,
   FlowVersion,
+  FlowVersionDetail,
   Folder,
   FolderPermission,
 } from '~/types/flow';
-
-// --- Mock Data Generators (for Local Development) ---
-const mockResponse = <T>(data: T): string =>
-  JSON.stringify({ success: true, data });
 
 // mockData.ts
 export const mockFlows: FlowMeta[] = [
@@ -80,33 +78,39 @@ export const mockFolders: Folder[] = [
   { folderId: '4', name: 'Archive' },
 ];
 
-export const mockVersions: FlowVersion[] = [
+export const mockVersions: FlowVersionDetail[] = [
   {
-    versionId: 'v2',
-    versionNum: 2,
-    status: 'PUBLISHED',
-    createdAt: '2023-11-13T11:20:00Z',
-  },
-  {
-    versionId: 'v1',
+    versionId: '1',
     versionNum: 1,
     status: 'PUBLISHED',
-    createdAt: '2023-11-01T09:00:00Z',
+    comment: 'Initial Draft',
+    createdBy: 'user@example.com',
+    createdAt: '2023-11-15T10:00:00Z',
+  },
+  {
+    versionId: '2',
+    versionNum: 2,
+    status: 'PUBLISHED',
+    comment: 'Initial Draft',
+    createdBy: 'user@example.com',
+    createdAt: '2023-11-15T10:00:00Z',
   },
 ];
 
-export const mockPermissions: FolderPermission[] = [
+export const mockPermissions: (PermissionRow & {
+  avatarUrl?: string | undefined;
+})[] = [
   {
     permissionId: 'p1',
     folderId: '1',
-    email: 'user@example.com',
-    role: 'OWNER',
+    subjectEmail: 'user@example.com',
+    role: 'ADMIN',
     avatarUrl: 'https://github.com/shadcn.png',
   },
   {
     permissionId: 'p2',
     folderId: '1',
-    email: 'colleague@example.com',
+    subjectEmail: 'colleague@example.com',
     role: 'VIEWER',
   },
 ];
@@ -117,70 +121,74 @@ export const sleep = (ms: number) =>
 
 const mockup: PartialScriptType<ServerScripts> = {
   getFlows: async () => {
-    await new Promise((resolve) => setTimeout(resolve, 800)); // 疑似遅延
-    return mockResponse(mockFlows);
+    await sleep(800);
+    return serialize(mockFlows);
   },
 
   getFolders: async () => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    return mockResponse(mockFolders);
+    await sleep(500);
+    return serialize(mockFolders);
   },
 
   getFolderPermissions: async (folderId) => {
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    return mockResponse(mockPermissions.filter((p) => p.folderId === folderId));
+    await sleep(600);
+    return serialize(mockPermissions.filter((p) => p.folderId === folderId));
   },
 
   addFolderPermission: async (folderId, email, role) => {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const newPerm: FolderPermission = {
+    await sleep(800);
+    const newPerm: PermissionRow & {
+      avatarUrl?: string | undefined;
+    } = {
       permissionId: `p-${Date.now()}`,
       folderId,
-      email,
-      role: role as any,
+      subjectEmail: email,
+      role,
     };
     mockPermissions.push(newPerm);
-    return mockResponse(newPerm);
+    return serialize(newPerm);
   },
 
   removeFolderPermission: async (permissionId) => {
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await sleep(600);
     const idx = mockPermissions.findIndex(
       (p) => p.permissionId === permissionId,
     );
     if (idx !== -1) mockPermissions.splice(idx, 1);
-    return mockResponse({ success: true });
+    return serialize({ success: true, permissionId });
   },
 
   updateFolderPermission: async (permissionId, role) => {
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await sleep(600);
     const perm = mockPermissions.find((p) => p.permissionId === permissionId);
-    if (perm) {
-      perm.role = role as any;
+    if (!perm) {
+      throw Error(`Permission ${permissionId} not found`);
     }
-    return mockResponse(perm);
+    perm.role = role;
+    return serialize(perm);
   },
 
   getFlowVersions: async (_flowId) => {
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await sleep(600);
     // For demo purposes, return same versions for all flows
-    return mockResponse(mockVersions);
+    return serialize(mockVersions);
   },
 
   searchFlows: async (query) => {
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await sleep(800);
     const lowerQuery = query.toLowerCase();
     const results = mockFlows.filter(
       (f) =>
         f.title.toLowerCase().includes(lowerQuery) ||
         f.currentStatus.toLowerCase().includes(lowerQuery),
     );
-    return mockResponse(results);
+    return serialize(results);
   },
 
   getFlowData: async (flowId, versionId) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return mockResponse<FlowData>({
+    return serialize({
+      userRole: 'ADMIN',
       meta: {
         flowId,
         versionId,
@@ -208,23 +216,26 @@ const mockup: PartialScriptType<ServerScripts> = {
   saveDraft: async () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     console.log('Mock: Draft Saved');
-    return mockResponse({ versionId: 'v-new-123' });
+    return serialize({ versionId: 'v-new-123' });
   },
 
   submitFlow: async () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    return mockResponse({ status: 'PENDING' });
+    return serialize({ status: 'PENDING' });
   },
 
   approveFlow: async () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    return mockResponse({ status: 'PUBLISHED' });
+    return serialize({ status: 'PUBLISHED', versionId: 'v-new-123' });
   },
 
   rejectFlow: async () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    return mockResponse({ status: 'REJECTED' });
+    return serialize({ status: 'REJECTED' });
   },
 };
 
-export const serverScripts = getPromisedServerScripts<ServerScripts>(mockup);
+export const serverScripts = getPromisedServerScripts<ServerScripts>({
+  mockupFunctions: mockup,
+  parseJson: true,
+});

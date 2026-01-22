@@ -147,6 +147,68 @@ export class AuthService {
   }
 
   /**
+   * フォルダごとの権限一覧を取得
+   */
+  getFolderPermissions(
+    folderId: string,
+  ): (PermissionRow & { avatarUrl?: string })[] {
+    const permissions = this.db.getData<PermissionRow>(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+    );
+    return permissions.filter((p) => p.folderId === folderId);
+  }
+
+  /**
+   * 権限の追加
+   */
+  addFolderPermission(
+    folderId: string,
+    subjectEmail: string,
+    role: Role,
+  ): PermissionRow {
+    const permissionId = `perm_${Utilities.getUuid().slice(0, 8)}`;
+    const newPerm: PermissionRow = {
+      permissionId,
+      folderId,
+      subjectEmail,
+      role,
+    };
+    this.db.insert(SHEET_NAMES.FOLDER_PERMISSIONS, newPerm);
+    return newPerm;
+  }
+
+  /**
+   * 権限の削除
+   */
+  removeFolderPermission(permissionId: string): void {
+    this.db.delete(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+      'permissionId',
+      permissionId,
+    );
+  }
+
+  /**
+   * 権限の更新
+   */
+  updateFolderPermission(permissionId: string, role: Role): PermissionRow {
+    const permissions = this.db.getData<PermissionRow>(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+    );
+    const target = permissions.find((p) => p.permissionId === permissionId);
+    if (!target) throw new Error('Permission not found');
+
+    const updated = { ...target, role };
+    this.db.update(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+      'permissionId',
+      permissionId,
+      updated,
+    );
+    return updated;
+  }
+
+  /**
    * ユーザー情報の取得 (ヘッダー表示用など)
    */
   getUserInfo(email: string) {

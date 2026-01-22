@@ -8,7 +8,7 @@ export class SheetDB {
       // コンテナバインドされていない場合のエラーハンドリング
       try {
         this.ss = SpreadsheetApp.getActiveSpreadsheet();
-      } catch (e) {
+      } catch {
         throw new Error(
           'No active spreadsheet found. Please provide a spreadsheet ID.',
         );
@@ -113,6 +113,33 @@ export class SheetDB {
         // 行単位で更新 (APIコール 1回)
         sheet.getRange(rowNumber, 1, 1, newRow.length).setValues([newRow]);
         return; // 1件更新したら終了
+      }
+    }
+  }
+
+  /**
+   * 条件に一致する行を削除
+   */
+  delete(sheetName: string, keyColumn: string, keyValue: string): void {
+    const sheet = this.ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error(`Sheet "${sheetName}" not found`);
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return;
+
+    const headers = data[0] as string[];
+    const keyIndex = headers.indexOf(keyColumn);
+
+    if (keyIndex === -1)
+      throw new Error(
+        `Column "${keyColumn}" not found in sheet "${sheetName}"`,
+      );
+
+    // 下から走査して一致する行を削除
+    for (let i = data.length - 1; i > 0; i--) {
+      if (String(data[i][keyIndex]) === String(keyValue)) {
+        sheet.deleteRow(i + 1);
+        return; // 1件削除したら終了
       }
     }
   }

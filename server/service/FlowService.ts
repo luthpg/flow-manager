@@ -297,6 +297,45 @@ export class FlowService {
   }
 
   /**
+   * フローの全バージョンを取得
+   */
+  getFlowVersions(flowId: string) {
+    const versions = this.db.getData<FlowVersionRow>(SHEET_NAMES.FLOW_VERSIONS);
+    return versions
+      .filter((v) => v.flowId === flowId)
+      .sort((a, b) => b.versionNum - a.versionNum)
+      .map(toFlowVersionDetail);
+  }
+
+  /**
+   * フロー検索
+   */
+  searchFlows(userEmail: string, query: string): FlowMeta[] {
+    const allowedFolderIds = this.auth.getAuthorizedFolderIds(userEmail);
+    const allFlows = this.db.getData<FlowRow>(SHEET_NAMES.FLOWS);
+
+    const lowerQuery = query.toLowerCase();
+
+    return allFlows
+      .filter((flow) => {
+        const isVisible = allowedFolderIds.includes(flow.folderId);
+        if (!isVisible) return false;
+
+        const matchTitle = flow.title.toLowerCase().includes(lowerQuery);
+        const matchStatus = flow.currentStatus
+          .toLowerCase()
+          .includes(lowerQuery);
+        return matchTitle || matchStatus;
+      })
+      .sort((a, b) => {
+        return (
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+      })
+      .map(toFlowMeta);
+  }
+
+  /**
    * ユーザーが閲覧可能なフローの一覧を取得
    */
   getFlowList(userEmail: string): FlowMeta[] {

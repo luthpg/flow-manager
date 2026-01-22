@@ -532,7 +532,6 @@ function FlowEditorContent({
   );
 
   // --- 1. Data Fetching ---
-  // biome-ignore lint/correctness/useExhaustiveDependencies: initial fetching
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -902,7 +901,7 @@ function FlowEditorContent({
 
   const handleFormat = useCallback(() => {
     // 1. ノードとスイムレーンの位置・サイズ修正
-    const formattedNodes = autoFormatGraph(nodes);
+    const formattedNodes = autoFormatGraph(nodes, edges);
 
     // 変更があれば更新 (位置が変わっていなくてもValidationは見たいので更新処理は走らせる)
     setNodes(formattedNodes);
