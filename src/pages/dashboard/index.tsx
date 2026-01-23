@@ -27,9 +27,8 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       // Fetch Folders
-      const foldersJson = await serverScripts.getFolders();
-      const foldersRes = JSON.parse(foldersJson) as ApiResponse<Folder[]>;
-      if (foldersRes.data) setFolders(foldersRes.data);
+      const foldersRes = await serverScripts.getFolders();
+      if (foldersRes != null) setFolders(foldersRes);
 
       // Fetch Flows (Initial All)
       loadFlows();
@@ -38,10 +37,9 @@ export default function Dashboard() {
 
   const loadFlows = async () => {
     setLoading(true);
-    const json = await serverScripts.getFlows();
-    const res = JSON.parse(json) as ApiResponse<FlowMeta[]>;
-    if (res.data != null) {
-      setFlows(res.data);
+    const res = await serverScripts.getFlows();
+    if (res != null) {
+      setFlows(res);
     }
     setLoading(false);
   };
@@ -52,9 +50,8 @@ export default function Dashboard() {
     const timer = setTimeout(async () => {
       if (searchTerm.trim()) {
         setLoading(true);
-        const json = await serverScripts.searchFlows(searchTerm);
-        const res = JSON.parse(json) as ApiResponse<FlowMeta[]>;
-        if (res.data) setFlows(res.data);
+        const res = await serverScripts.searchFlows(searchTerm);
+        if (res != null) setFlows(res);
         setLoading(false);
       } else {
         // Reset to all flows (or filtered by folder if we combine logics)

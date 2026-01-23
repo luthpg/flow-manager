@@ -536,22 +536,21 @@ function FlowEditorContent({
     const fetchData = async () => {
       setLoading(true);
       try {
-        const json = await serverScripts.getFlowData(id, version);
-        const res = JSON.parse(json) as ApiResponse<FlowData>;
-        if (res.success && res.data) {
+        const res = await serverScripts.getFlowData(id, version);
+        if (res != null) {
           // ▼ Store's init action
           init(
-            res.data.graphData,
+            res.graphData,
             '/flow/[id]/[version]/edit',
             { id, version, sheetId },
             navigate,
           );
 
-          setFlowTitle(res.data.meta.title);
-          setFlowStatus(res.data.meta.currentStatus);
-          setFolderId(res.data.meta.folderId);
+          setFlowTitle(res.meta.title);
+          setFlowStatus(res.meta.currentStatus);
+          setFolderId(res.meta.folderId);
         } else {
-          toast.error('Failed to load flow', { description: res.error });
+          toast.error('Failed to load flow');
         }
       } catch (e) {
         console.error(e);
@@ -837,20 +836,17 @@ function FlowEditorContent({
       setNodes(nodesWithLaneInfo);
 
       const fullData = getSnapshot(); // 引数なしに変更
-      const json = await serverScripts.saveDraft({
+      const res = await serverScripts.saveDraft({
         flowId: id,
         title: flowTitle,
         graphData: fullData, // 構造化データを保存
       });
-      const res = JSON.parse(json);
-
-      if (!res.success) throw new Error(res.error);
 
       // 保存後、バージョンIDが変わる可能性がある（初回保存時など）
-      if (res.success && res.data.versionId !== version) {
+      if (res.versionId !== version) {
         navigate('/flow/[id]/[version]/edit', {
           id,
-          version: res.data.versionId,
+          version: res.versionId,
         });
       }
 
@@ -868,13 +864,11 @@ function FlowEditorContent({
   // Submit Flow
   const handleSubmit = async () => {
     const promise = async () => {
-      const json = await serverScripts.submitFlow({
+      const res = await serverScripts.submitFlow({
         flowId: id,
         versionId: version,
         comment: 'Submitted from Editor',
       });
-      const res = JSON.parse(json);
-      if (!res.success) throw new Error(res.error);
       setFlowStatus('PENDING');
       return res;
     };

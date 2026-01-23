@@ -320,11 +320,10 @@ function ViewerContent({
     const fetchData = async () => {
       setLoading(true);
       try {
-        const json = await serverScripts.getFlowData(id, version);
-        const res = JSON.parse(json) as ApiResponse<FlowData>;
+        const res = await serverScripts.getFlowData(id, version);
 
-        if (res.success && res.data) {
-          const { meta, graphData, version: verData } = res.data;
+        if (res != null) {
+          const { meta, graphData, version: verData } = res;
 
           setFlowTitle(meta.title);
           setFlowStatus(verData.status);
@@ -353,17 +352,16 @@ function ViewerContent({
               // 仮に activeVersionId を使う
               const compareVersionId = meta.activeVersionId;
               if (compareVersionId && compareVersionId !== version) {
-                const baseJson = await serverScripts.getFlowData(
+                const baseRes = await serverScripts.getFlowData(
                   id,
                   compareVersionId,
                 );
-                const baseRes = JSON.parse(baseJson);
 
-                if (baseRes.success) {
+                if (baseRes != null) {
                   const baseNodes =
-                    baseRes.data.graphData.sheets?.[0]?.nodes || [];
+                    baseRes.graphData.sheets?.[0]?.nodes || [];
                   const baseEdges =
-                    baseRes.data.graphData.sheets?.[0]?.edges || [];
+                    baseRes.graphData.sheets?.[0]?.edges || [];
 
                   // Diff計算
                   const {
@@ -405,7 +403,7 @@ function ViewerContent({
           );
           setHistoryList(parsedHistory);
         } else {
-          toast.error('Failed to load flow', { description: res.error });
+          toast.error('Failed to load flow');
         }
       } catch (e) {
         console.error(e);
@@ -448,7 +446,7 @@ function ViewerContent({
   const handleAction = async (action: 'approve' | 'reject') => {
     setIsActionProcessing(true);
     try {
-      let res: ApiResponse<{ status: string; versionId?: string }>;
+      let res: { status: string; versionId?: string };
       if (action === 'approve') {
         // 1. 最終データの生成 (Resolve)
         let graphDataPayload: FlowGraphData | undefined;
@@ -480,39 +478,37 @@ function ViewerContent({
         }
 
         // 2. 承認APIコール (graphData付き)
-        const json = await serverScripts.approveFlow({
+        res = await serverScripts.approveFlow({
           flowId: id,
           versionId: version,
           comment: actionComment,
           graphData: graphDataPayload, // 選別結果を送信
         });
-        res = JSON.parse(json);
       } else {
         // 否認実行
-        const json = await serverScripts.rejectFlow({
+        res = await serverScripts.rejectFlow({
           flowId: id,
           versionId: version,
           comment: actionComment,
         });
-        res = JSON.parse(json);
       }
 
-      if (res.success) {
+      if (res != null) {
         toast.success(action === 'approve' ? 'Flow approved' : 'Flow rejected');
         if (
           action === 'approve' &&
-          res.data?.versionId &&
-          res.data.versionId !== version
+          res.versionId &&
+          res.versionId !== version
         ) {
           navigate('/flow/[id]/[version]/preview', {
             id,
-            version: res.data.versionId,
+            version: res.versionId,
           });
         } else {
           window.location.reload();
         }
       } else {
-        toast.error('Action failed', { description: res.error });
+        toast.error('Action failed');
       }
     } catch (_e) {
       toast.error('Communication error');
