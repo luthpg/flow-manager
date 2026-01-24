@@ -176,27 +176,7 @@ export class FlowService {
     try {
       lock.waitLock(APP_CONFIG.LOCK_WAIT_MS);
 
-      let updateData: Record<string, any> = {
-        updatedAt: new Date(),
-      };
-
-      if (graphData) {
-        const jsonString = JSON.stringify(graphData);
-        const splitData = splitJsonData(jsonString);
-        updateData = { ...updateData, ...splitData };
-      }
-
-      // まず更新データを適用 (グラフデータがある場合)
-      if (Object.keys(updateData).length > 1) {
-        // updatedAt以外がある場合
-        this.db.update(
-          SHEET_NAMES.FLOW_VERSIONS,
-          'versionId',
-          currentVersionId,
-          updateData,
-        );
-      }
-
+      // 1. Get current draft
       const versions = this.db.getData<FlowVersionRow>(
         SHEET_NAMES.FLOW_VERSIONS,
       );
@@ -211,26 +191,59 @@ export class FlowService {
         );
       }
 
-      // 新しいリリースIDの生成
+      // 2. Prepare Data (Handle graphData update if provided)
+      // If graphData is provided, it should be reflected in both the Merged draft and the Published version.
+      let commonData: Record<string, any> = {};
+      if (graphData) {
+        const jsonString = JSON.stringify(graphData);
+        commonData = splitJsonData(jsonString);
+      }
+
+      const approvalComment = targetVersion.comment
+        ? `${targetVersion.comment}\n\n[Approved by ${approverEmail}]: ${comment}`
+        : `[Approved by ${approverEmail}]: ${comment}`;
+
+      // 3. Mark Draft as MERGED
+      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'versionId', currentVersionId, {
+        status: 'MERGED',
+        comment: approvalComment,
+        updatedAt: new Date(),
+        ...commonData, // Update draft with latest content if provided
+      });
+
+      // 4. Create New PUBLISHED Version
       const existingIds = versions
         .filter((v) => v.flowId === flowId)
         .map((v) => v.versionId);
 
+      // Note: We need to include 'currentVersionId' in existingIds calculation effectively?
+      // generateReleaseVersionId checks for YYYYMMDD-NN formatting.
+      // It doesn't matter if we pass the current draft id, it ignores it or handles it.
+
       const newVersionId = generateReleaseVersionId(existingIds);
 
-      const newComment = targetVersion.comment
-        ? `${targetVersion.comment}\n\n[Approved by ${approverEmail}]: ${comment}`
-        : `[Approved by ${approverEmail}]: ${comment}`;
+      // Construct row for insertion
+      // Base it on targetVersion (which has flowId, versionNum, createdBy etc.)
+      // But we update status, versionId, etc.
 
-      // ID書き換えとステータス更新
-      this.db.update(SHEET_NAMES.FLOW_VERSIONS, 'versionId', currentVersionId, {
+      const publishedRow: FlowVersionRow = {
+        ...targetVersion,
+        ...commonData, // Apply latest graphData
         versionId: newVersionId,
         status: 'PUBLISHED',
-        comment: newComment,
-        updatedAt: new Date(),
-      });
+        comment: approvalComment,
+        updatedAt: new Date(), // Published time
+        // versionNum? Should we increment?
+        // Logic: Releases might want sequential versionNums?
+        // Existing logic for drafts was `maxNum + 1`.
+        // If we reuse the draft's versionNum, it might handle continuity.
+        // But usually 'Release' differs from 'Draft' numbering?
+        // Let's keep the draft's versionNum for now as 'this draft became this release'.
+      };
 
-      // 親情報の更新
+      this.db.insert(SHEET_NAMES.FLOW_VERSIONS, publishedRow);
+
+      // 5. Update Parent Flow Meta
       this.db.update(SHEET_NAMES.FLOWS, 'flowId', flowId, {
         currentStatus: 'PUBLISHED',
         activeVersionId: newVersionId,

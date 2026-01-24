@@ -23,7 +23,7 @@ import {
   User,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import z from 'zod';
 import {
@@ -67,15 +67,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Toggle } from '@/components/ui/toggle';
 import useIsMobile from '@/hooks/is-mobile';
 import {
-  computeDiff,
+  computeMultiSheetDiff,
   type DiffDecision,
   type DiffStatus,
+  type DiffResult,
   resolveDiff,
 } from '@/lib/diff-utils';
 import { serverScripts } from '@/lib/server';
 import { useFlowStore } from '@/stores/flow-store';
-import type { ApiResponse } from '~/types/appsscript/server';
-import type { FlowData, FlowGraphData, FlowStatus, Role } from '~/types/flow';
+import type { FlowGraphData, FlowStatus, Role } from '~/types/flow';
 
 // 履歴表示用の型定義
 interface HistoryItem {
@@ -244,17 +244,16 @@ function ViewerContent({
   const navigate = useNavigate();
   const { theme } = useTheme();
 
+  // --- Theme / Visuals ---
+  const isDark =
+    theme === 'dark' ||
+    (theme === 'system' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const resolvedTheme = isDark ? 'dark' : 'light';
+
   // --- Store Hooks ---
-  const {
-    nodes,
-    edges,
-    sheets,
-    activeSheetId,
-    setNodes,
-    setEdges,
-    init,
-    switchSheet,
-  } = useFlowStore();
+  const { nodes, edges, sheets, activeSheetId, setNodes, setEdges, init } =
+    useFlowStore();
 
   // --- Local State ---
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -271,23 +270,12 @@ function ViewerContent({
   const [diffDecisions] = useState<Record<string, DiffDecision>>({});
 
   // Diff表示用データ (計算結果を保持)
-  const diffDataRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const [previewNodes, setPreviewNodes] = useState<
     (Node & { data: { label?: string } })[]
   >([]);
 
   // 元のDiff計算結果
-  const [rawDiffResult, setRawDiffResult] = useState<{
-    nodes: Node[];
-    edges: Edge[];
-    baseNodes: Node[];
-    baseEdges: Edge[];
-  } | null>(null);
-
-  const [originalGraph, setOriginalGraph] = useState<{
-    nodes: Node[];
-    edges: Edge[];
-  } | null>(null);
+  const [rawDiffResult, setRawDiffResult] = useState<DiffResult | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [actionComment, setActionComment] = useState('');
@@ -315,133 +303,6 @@ function ViewerContent({
     [],
   );
 
-  // --- Data Fetching ---
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const res = await serverScripts.getFlowData(id, version);
-
-        if (res != null) {
-          const { meta, graphData, version: verData } = res;
-
-          setFlowTitle(meta.title);
-          setFlowStatus(verData.status);
-          // TODO: User Role should be fetched from somewhere or determined
-          setUserRole('EDITOR'); // 仮: 権限ロジックの実装が必要
-
-          // ストア初期化
-          init(
-            graphData,
-            '/flow/[id]/[version]/preview',
-            { id, version },
-            navigate,
-          );
-
-          // Diff用: 初期シートのデータを取得 (ストア初期化後なので、graphDataから直接参照)
-          const initialId =
-            sheetId || graphData.activeSheetId || graphData.sheets[0].id;
-          const finalNodes = graphData.sheets?.[0]?.nodes || [];
-          const finalEdges = graphData.sheets?.[0]?.edges || [];
-
-          // 2. Diffモードの準備 (PENDING かつ 比較対象がある場合)
-          if (verData.status === 'PENDING' && initialId) {
-            try {
-              // 比較対象(公開版)を取得するために activeVersionId 等を使うべきだが、
-              // ここでは簡易的に前バージョンや公開バージョンを取得するロジックが必要
-              // 仮に activeVersionId を使う
-              const compareVersionId = meta.activeVersionId;
-              if (compareVersionId && compareVersionId !== version) {
-                const baseRes = await serverScripts.getFlowData(
-                  id,
-                  compareVersionId,
-                );
-
-                if (baseRes != null) {
-                  const baseNodes =
-                    baseRes.graphData.sheets?.[0]?.nodes || [];
-                  const baseEdges =
-                    baseRes.graphData.sheets?.[0]?.edges || [];
-
-                  // Diff計算
-                  const {
-                    nodes: diffNodes,
-                    edges: diffEdges,
-                    // changes, // Unused
-                  } = computeDiff(baseNodes, baseEdges, finalNodes, finalEdges);
-
-                  setRawDiffResult({
-                    nodes: diffNodes,
-                    edges: diffEdges,
-                    baseNodes,
-                    baseEdges,
-                  });
-
-                  // Diffデータの保存
-                  diffDataRef.current = {
-                    nodes: diffNodes,
-                    edges: diffEdges,
-                  };
-                  setPreviewNodes(diffNodes);
-                  // setDiffChanges(changes);
-
-                  // 元データを保存 (DiffモードOFF時の復帰用)
-                  setOriginalGraph({ nodes: finalNodes, edges: finalEdges });
-                }
-              }
-            } catch (e) {
-              console.error('Failed to fetch comparison version', e);
-            }
-          }
-
-          // コメント履歴パース
-          const rawComments = verData.comment || '';
-          const parsedHistory = parseHistory(
-            rawComments,
-            verData.createdBy,
-            verData.createdAt,
-          );
-          setHistoryList(parsedHistory);
-        } else {
-          toast.error('Failed to load flow');
-        }
-      } catch (e) {
-        console.error(e);
-        toast.error('Connection failed');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [id, version, init, navigate, sheetId]); // sheetId added
-
-  // --- Sheet Switch Handler ---
-  const handleSwitchSheet = useCallback(
-    (targetId: string) => {
-      // シート切り替え時はDiffモードを解除する（Diffは通常メインシートのみ対応のため）
-      if (isDiffMode) {
-        setIsDiffMode(false);
-        // Diff解除は toggleDiffMode のロジックが必要だが、switchSheet で store は上書きされるので
-        // Diffモードフラグだけ折ればよい
-      }
-      switchSheet(
-        targetId,
-        '/flow/[id]/[version]/preview',
-        { id, version },
-        navigate,
-      );
-      setSelectedNodeId(null);
-    },
-    [isDiffMode, navigate, id, version, switchSheet],
-  );
-
-  /* handleToggleDecision is moved to DiffSidebar logic or unused if sidebar handles it internally. 
-     Wait, DiffSidebar does NOT have individual item toggle in standard prop interface I defined?
-     Let's check DiffSidebar props: onApprove, onReject. It does NOT have per-node toggle. 
-     The Requirement was "Comment with Approve/Reject". The per-node toggle was in my old logic.
-     I deleted the old sidebar code in render(), so this function is indeed dead code.
-  */
-
   // --- Actions (Approve / Reject) ---
   const handleAction = async (action: 'approve' | 'reject') => {
     setIsActionProcessing(true);
@@ -452,27 +313,16 @@ function ViewerContent({
         let graphDataPayload: FlowGraphData | undefined;
 
         if (rawDiffResult) {
-          const { nodes: finalNodes, edges: finalEdges } = resolveDiff(
-            rawDiffResult.nodes,
-            rawDiffResult.edges,
-            rawDiffResult.baseNodes,
-            rawDiffResult.baseEdges,
-            diffDecisions,
-          );
-
-          // シート構造に合わせて整形
-          // 現状のStoreのsheetsを取得し、Activeなシート(index 0と仮定)を更新
-          const currentSheets = [...sheets];
-          if (currentSheets.length > 0) {
-            currentSheets[0] = {
-              ...currentSheets[0],
-              nodes: finalNodes,
-              edges: finalEdges,
-            };
-          }
+          const resolvedSheets = resolveDiff(rawDiffResult, diffDecisions);
 
           graphDataPayload = {
-            sheets: currentSheets,
+            sheets: resolvedSheets,
+            activeSheetId: activeSheetId,
+          };
+        } else {
+          // No diff result?Fallback to current store data
+          graphDataPayload = {
+            sheets: sheets,
             activeSheetId: activeSheetId,
           };
         }
@@ -518,6 +368,149 @@ function ViewerContent({
     }
   };
 
+  // --- Data Fetching ---
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const res = await serverScripts.getFlowData(id, version);
+
+        if (res != null) {
+          const { meta, graphData, version: verData } = res;
+
+          setFlowTitle(meta.title);
+          setFlowStatus(verData.status);
+          // TODO: User Role should be fetched from somewhere or determined
+          setUserRole('EDITOR'); // 仮: 権限ロジックの実装が必要
+
+          // ストア初期化
+          init(
+            graphData,
+            '/flow/[id]/[version]/preview',
+            { id, version },
+            navigate,
+          );
+
+          // Diff用: 初期シートのデータを取得
+          const initialId =
+            sheetId || graphData.activeSheetId || graphData.sheets[0].id;
+
+          // 2. Diffモードの準備 (PENDING かつ 比較対象がある場合)
+          if (verData.status === 'PENDING' && initialId) {
+            try {
+              const compareVersionId = meta.activeVersionId;
+              if (compareVersionId && compareVersionId !== version) {
+                const baseRes = await serverScripts.getFlowData(
+                  id,
+                  compareVersionId,
+                );
+
+                if (baseRes != null) {
+                  const baseSheets = baseRes.graphData.sheets || [];
+                  const targetSheets = graphData.sheets || [];
+
+                  // Diff計算 (Multi-sheet)
+                  const diffResult = computeMultiSheetDiff(
+                    baseSheets,
+                    targetSheets,
+                  );
+
+                  setRawDiffResult(diffResult);
+                  // Refにも保存 (toggle時にstateが古い可能性があるため)
+                  // diffDataRef is currently typed as single sheet nodes/edges. Update ref type if possible or cast.
+                  // Actually ref might not be needed if we rely on state or map.
+                  // Let's store full result in state.
+                }
+              }
+            } catch (e) {
+              console.error('Failed to fetch comparison version', e);
+            }
+          }
+
+          // コメント履歴パース (Legacy comment parsing, can be replaced by real version list if available)
+          const rawComments = verData.comment || '';
+          const parsedHistory = parseHistory(
+            rawComments,
+            verData.createdBy,
+            verData.createdAt,
+          );
+          setHistoryList(parsedHistory);
+        } else {
+          toast.error('Failed to load flow');
+        }
+      } catch (e) {
+        console.error(e);
+        toast.error('Connection failed');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [id, version, init, navigate, sheetId]);
+
+  // --- Sheet Switch Handler ---
+  // Note: Sheet switching involves resetting nodes/edges from store.
+  // If Diff Mode is ON, we need to apply diff for the new sheet.
+  // We can hook into activeSheetId change or handle it in toggle/switch.
+  // Since 'switchSheet' updates the store, we should listen to 'activeSheetId' or 'isDiffMode' changes to re-apply diff layer?
+  // But 'setNodes' in switchSheet overrides everything.
+  // So we should re-apply diffs when activeSheetId changes IF isDiffMode is true.
+
+  // Actually, useEffect on [activeSheetId, isDiffMode, rawDiffResult] is better.
+  useEffect(() => {
+    if (!isDiffMode || !rawDiffResult) return;
+
+    const currentSheetId = activeSheetId; // from store
+    const sheetDiff = rawDiffResult.sheets[currentSheetId];
+
+    if (sheetDiff) {
+      // Diffデータを適用 (スタイル注入)
+      const styledNodes = sheetDiff.nodes.map((n: Node) => {
+        const status = n.data._diff as DiffStatus;
+        if (!status || status === 'unchanged') return n;
+        return {
+          ...n,
+          style: {
+            ...n.style,
+            ...getDiffStyle(status, resolvedTheme === 'dark'),
+          },
+        };
+      });
+
+      const styledEdges = sheetDiff.edges.map((e: Edge) => {
+        const status = e.data?._diff as DiffStatus;
+        let stroke = '';
+        if (status === 'added') stroke = '#3b82f6';
+        if (status === 'deleted') stroke = '#ef4444';
+        return stroke
+          ? { ...e, style: { ...e.style, stroke, strokeWidth: 2 } }
+          : e;
+      });
+
+      setNodes(styledNodes);
+      setEdges(styledEdges);
+      setPreviewNodes(sheetDiff.nodes); // Sidebar用
+    } else {
+      // シート自体がDiffに存在しない（新規追加シートでDiff未計算？いやcomputeMultiSheetDiffは全シート網羅するはず）
+      // もしDeletedシートなら？ -> deleted status logic needs handling.
+      // For now, if no diff entry, maybe it's unchanged? Or we should fallback to store?
+      // computeMultiSheetDiff covers all target sheets + deleted base sheets.
+      // If activeSheetId is a deleted sheet (only exists in base), it won't be in 'sheets' store unless we injected it?
+      // The store only has 'target' sheets (Draft).
+      // So we can only switch to sheets that exist in Draft.
+      // Deleted sheets are visible in Sidebar? If we want to show deleted sheets, we need to inject them into the tabs/store.
+      // That's complex. For MVP, focus on Modified/Added sheets.
+    }
+  }, [
+    activeSheetId,
+    isDiffMode,
+    rawDiffResult,
+    isDark,
+    resolvedTheme,
+    setNodes,
+    setEdges,
+  ]);
+
   // --- Helper: Node Selection ---
   // Storeのnodesを使う
   const selectedNode = useMemo(
@@ -544,46 +537,18 @@ function ViewerContent({
   // --- Toggle Diff Mode ---
   const toggleDiffMode = (pressed: boolean) => {
     setIsDiffMode(pressed);
-    const diffData = diffDataRef.current;
 
-    if (pressed && diffData) {
-      // Diffデータを適用 (スタイル注入)
-      const styledNodes = diffData.nodes.map((n: Node) => {
-        const status = n.data._diff as DiffStatus;
-        if (!status || status === 'unchanged') return n;
-
-        return {
-          ...n,
-          style: {
-            ...n.style,
-            // ...getDiffStyle(status, resolvedTheme === 'dark'), // Keep getDiffStyle logic if needed
-            ...getDiffStyle(status, resolvedTheme === 'dark'),
-          },
-        };
-      });
-
-      // エッジの色変え (追加:青, 削除:赤)
-      const styledEdges = diffData.edges.map((e: Edge) => {
-        const status = e.data?._diff as DiffStatus;
-        let stroke = '';
-        if (status === 'added') stroke = '#3b82f6';
-        if (status === 'deleted') stroke = '#ef4444';
-
-        return stroke
-          ? { ...e, style: { ...e.style, stroke, strokeWidth: 2 } }
-          : e;
-      });
-
-      setNodes(styledNodes);
-      setEdges(styledEdges);
-      setTimeout(() => fitView({ padding: 0.2 }), 50);
-
-      // Auto-open sidebar when diff mode is enabled
-      // The Sidebar logic is handled in the render return
-    } else if (originalGraph) {
-      // 通常モードに戻す (Original Graph data)
-      setNodes(originalGraph.nodes);
-      setEdges(originalGraph.edges);
+    if (!pressed) {
+      // OFF: Restore original state from Store (which holds the Draft data)
+      // Store is SOT for Draft. switchSheet(activeSheetId) reloads from store 'sheets'.
+      // But switchSheet function takes args we don't easily have here (navigate etc).
+      // Actually we can just grab nodes/edges from the current 'sheets' state in store?
+      // 'sheets' in store is up to date with Draft.
+      const currentSheet = sheets.find((s) => s.id === activeSheetId);
+      if (currentSheet) {
+        setNodes(currentSheet.nodes);
+        setEdges(currentSheet.edges);
+      }
     }
   };
 
@@ -592,7 +557,7 @@ function ViewerContent({
     setSelectedNodeId(nodeId);
     const node = nodes.find((n) => n.id === nodeId);
     if (node) {
-      fitView({ nodes: [node], duration: 800, padding: 2 }); // Zoom to node
+      fitView({ nodes: [node], duration: 800, padding: 2 });
     }
   };
 
@@ -603,13 +568,6 @@ function ViewerContent({
       sheetId: activeSheetId,
     });
   }, [navigate, id, version, activeSheetId]);
-
-  // --- Theme / Visuals ---
-  const isDark =
-    theme === 'dark' ||
-    (theme === 'system' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches);
-  const resolvedTheme = isDark ? 'dark' : 'light';
 
   // マスクカラー: 閲覧画面は見やすさ重視で少し暗くする
   const maskColor = isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.25)';
@@ -912,6 +870,8 @@ function StatusBadge({ status }: { status: FlowStatus }) {
       'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
     REJECTED:
       'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
+    MERGED:
+      'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800',
   };
   return (
     <Badge

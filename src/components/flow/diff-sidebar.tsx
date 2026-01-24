@@ -10,8 +10,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import type { DiffStatus } from '@/lib/diff-utils';
 import { cn } from '@/lib/utils';
 
 interface DiffSidebarProps {
@@ -40,7 +38,6 @@ export function DiffSidebar({
     nodes: Node[],
     title: string,
     icon: React.ReactNode,
-    colorClass: string,
   ) => {
     if (nodes.length === 0) return null;
 
@@ -107,19 +104,16 @@ export function DiffSidebar({
           addedNodes,
           'Added',
           <PlusCircle className="w-3 h-3 text-blue-500" />,
-          'text-blue-500',
         )}
         {renderNodeList(
           modifiedNodes,
           'Modified',
           <CheckCircle2 className="w-3 h-3 text-green-500" />,
-          'text-green-500',
         )}
         {renderNodeList(
           deletedNodes,
           'Deleted',
           <MinusCircle className="w-3 h-3 text-red-500" />,
-          'text-red-500',
         )}
 
         {diffNodes.every(

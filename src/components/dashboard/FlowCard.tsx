@@ -19,7 +19,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { serverScripts } from '@/lib/server';
-import type { ApiResponse } from '~/types/appsscript/server';
 import type { FlowMeta, FlowStatus, FlowVersion } from '~/types/flow';
 
 const getStatusBadge = (status: FlowStatus) => {
@@ -47,6 +46,15 @@ const getStatusBadge = (status: FlowStatus) => {
       );
     case 'REJECTED':
       return <Badge variant="destructive">否認</Badge>;
+    case 'MERGED':
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-purple-100 text-purple-700 hover:bg-purple-200 border-purple-200"
+        >
+          マージ済
+        </Badge>
+      );
     default:
       return <Badge variant="outline">不明</Badge>;
   }
@@ -61,10 +69,11 @@ export function FlowCard({ flow }: { flow: FlowMeta }) {
     if (!open || versions.length > 0) return;
     setLoadingVersions(true);
     try {
-      const json = await serverScripts.getFlowVersions(flow.flowId);
-      const res = JSON.parse(json) as ApiResponse<FlowVersion[]>;
-      if (res.data) {
-        setVersions(res.data);
+      const res = await serverScripts.getFlowVersions(flow.flowId);
+      // const res = JSON.parse(json) as ApiResponse<FlowVersion[]>; // Removed
+      if (res && Array.isArray(res)) {
+        // Note: getFlowVersions returns FlowVersionDetail[] directly based on updated types
+        setVersions(res);
       }
     } catch (e) {
       console.error('Failed to load versions', e);

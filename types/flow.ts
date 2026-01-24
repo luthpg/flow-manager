@@ -1,7 +1,12 @@
 import type { Edge, Node } from '@xyflow/react';
 
 // --- 基本的なステータスとロール ---
-export type FlowStatus = 'DRAFT' | 'PENDING' | 'PUBLISHED' | 'REJECTED';
+export type FlowStatus =
+  | 'DRAFT'
+  | 'PENDING'
+  | 'PUBLISHED'
+  | 'REJECTED'
+  | 'MERGED';
 export type Role = 'VIEWER' | 'EDITOR' | 'APPROVER' | 'ADMIN';
 
 export interface Folder {

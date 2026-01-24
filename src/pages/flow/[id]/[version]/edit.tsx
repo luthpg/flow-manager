@@ -125,7 +125,6 @@ import { GRID_SIZE, OFFSET_Y, SLOT_HEIGHT, SLOT_WIDTH } from '@/lib/constants';
 import { serverScripts } from '@/lib/server';
 import { cn } from '@/lib/utils';
 import { useFlowStore } from '@/stores/flow-store';
-import type { ApiResponse } from '~/types/appsscript/server';
 import type { FlowData, FlowStatus } from '~/types/flow';
 
 // 定義済みカラーパレット（BPMNツールでよくある色）

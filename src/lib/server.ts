@@ -4,14 +4,7 @@ import {
   type PartialScriptType,
 } from '@ciderjs/gasnuki/promise';
 import type { PermissionRow, ServerScripts } from '~/types/appsscript/client';
-import type {
-  FlowData,
-  FlowMeta,
-  FlowVersion,
-  FlowVersionDetail,
-  Folder,
-  FolderPermission,
-} from '~/types/flow';
+import type { FlowMeta, FlowVersionDetail, Folder } from '~/types/flow';
 
 // mockData.ts
 export const mockFlows: FlowMeta[] = [

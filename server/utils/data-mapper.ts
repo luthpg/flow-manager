@@ -24,6 +24,7 @@ export interface FlowVersionRow {
   jsonData5?: string;
   createdBy: string;
   createdAt: string | Date;
+  updatedAt?: string | Date;
   comment: string;
 }
 

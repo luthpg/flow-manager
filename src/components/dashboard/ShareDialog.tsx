@@ -19,8 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { serverScripts } from '@/lib/server';
-import type { ApiResponse } from '~/types/appsscript/server';
-import type { FolderPermission } from '~/types/flow';
+import type { FolderPermission, Role } from '~/types/flow';
 
 // Simple validation
 const isValidEmail = (email: string) => /^\S+@\S+\.\S+$/.test(email);
@@ -44,15 +43,22 @@ export function ShareDialog({
 
   // Form State
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('VIEWER');
+  const [role, setRole] = useState<Role>('VIEWER');
 
   const fetchPermissions = async () => {
     if (!folderId) return;
     setLoading(true);
     try {
-      const json = await serverScripts.getFolderPermissions(folderId);
-      const res = JSON.parse(json) as ApiResponse<FolderPermission[]>;
-      if (res.data) setPermissions(res.data);
+      const res = await serverScripts.getFolderPermissions(folderId);
+      if (res) {
+        // Map backend type (PermissionRow) to frontend type (FolderPermission)
+        const mapped: FolderPermission[] = res.map((p: any) => ({
+          ...p,
+          email: p.subjectEmail || p.email, // Handle different field names
+          role: p.role as any, // Cast role
+        }));
+        setPermissions(mapped);
+      }
     } catch (error) {
       console.error('Failed to load permissions', error);
     } finally {
@@ -94,9 +100,9 @@ export function ShareDialog({
     }
   };
 
-  const onUpdateRole = async (permissionId: string, newRole: string) => {
+  const onUpdateRole = async (permissionId: string, newRole: Role) => {
     try {
-      await serverScripts.updateFolderPermission(permissionId, newRole);
+      await serverScripts.updateFolderPermission(permissionId, newRole as Role);
       fetchPermissions();
     } catch (error) {
       console.error('Failed to update role', error);
@@ -126,7 +132,7 @@ export function ShareDialog({
               className="flex-1"
               required
             />
-            <Select value={role} onValueChange={setRole}>
+            <Select value={role} onValueChange={(val) => setRole(val as Role)}>
               <SelectTrigger className="w-[110px]">
                 <SelectValue placeholder="Role" />
               </SelectTrigger>
@@ -186,7 +192,7 @@ export function ShareDialog({
                     <Select
                       value={perm.role}
                       onValueChange={(val) =>
-                        onUpdateRole(perm.permissionId, val)
+                        onUpdateRole(perm.permissionId, val as Role)
                       }
                     >
                       <SelectTrigger className="w-[100px] h-8 text-xs">
