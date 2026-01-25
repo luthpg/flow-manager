@@ -69,8 +69,8 @@ import useIsMobile from '@/hooks/is-mobile';
 import {
   computeMultiSheetDiff,
   type DiffDecision,
-  type DiffStatus,
   type DiffResult,
+  type DiffStatus,
   resolveDiff,
 } from '@/lib/diff-utils';
 import { serverScripts } from '@/lib/server';

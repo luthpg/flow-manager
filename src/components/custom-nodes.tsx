@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils';
 // --- 共通: 4方向の接続ハンドル ---
 const NodeHandles = () => {
   const handleClass = cn(
-    'w-3 h-3 bg-muted-foreground border-2 border-background',
+    'w-5! h-5! bg-muted-foreground border-2! border-muted-foreground!',
     'transition-opacity duration-200', // ふわっと表示させるアニメーション
     'opacity-0 group-hover:opacity-100', // ホバー時のみ表示
   );

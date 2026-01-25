@@ -1,7 +1,5 @@
-import dagre from '@dagrejs/dagre';
 import type { Edge, Node } from '@xyflow/react';
 import {
-  NODE_H,
   NODE_W_SQUARE,
   NODE_W_WIDE,
   OFFSET_Y,
@@ -123,198 +121,235 @@ export const validateBPMN = (
   };
 };
 
-// --- Dagre Layout Helper ---
-const layoutGraphWithDagre = (nodes: Node[], edges: Edge[]) => {
-  const g = new dagre.graphlib.Graph({ compound: true });
-  g.setGraph({
-    rankdir: 'LR',
-    align: 'UL',
-    nodesep: SLOT_HEIGHT / 2, // Vertical separation
-    ranksep: SLOT_WIDTH / 2, // Horizontal separation
-    marginx: 50,
-    marginy: 50,
-  });
-  g.setDefaultEdgeLabel(() => ({}));
+// --- 2. Auto Formatting Logic (Custom Implementation) ---
 
-  // Helper map to track which nodes are inside which lanes
-  const laneMap = new Map<string, string>(); // nodeId -> laneId
-
-  // Add Nodes (including Swimlanes as clusters)
-  for (const node of nodes) {
-    if (node.type === 'bpmnSwimlane') {
-      g.setNode(node.id, {
-        label: node.data.label as string,
-        clusterLabelPos: 'top',
-      });
-    } else if (node.type === 'bpmnArrow') {
-    } else {
-      // Normal Nodes
-      // Determine dimensions (Dagre needs W/H)
-      const isWide = ['bpmnTask', 'bpmnMessaging', 'bpmnDecision'].includes(
-        node.type || '',
-      );
-      const width = isWide ? NODE_W_WIDE : NODE_W_SQUARE;
-      const height = NODE_H;
-
-      g.setNode(node.id, {
-        width,
-        height,
-        label: node.data.label as string | undefined,
-      });
-
-      // If node has a parent lane assigned (pre-calculated), ensure Dagre knows
-      const parentLaneId = node.data.parentLaneId as string | undefined;
-      if (parentLaneId) {
-        g.setParent(node.id, parentLaneId);
-        laneMap.set(node.id, parentLaneId);
-      }
-    }
-  }
-
-  // Add Edges
-  for (const edge of edges) {
-    // Only add edges between nodes that exist in the graph
-    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
-      g.setEdge(edge.source, edge.target);
-    }
-  }
-
-  // Compute Layout
-  dagre.layout(g);
-
-  // Apply positions back to nodes
-  return nodes.map((node) => {
-    if (g.hasNode(node.id)) {
-      const { x, y, width, height } = g.node(node.id);
-
-      if (node.type === 'bpmnSwimlane') {
-        // Dagre calculates bounding box for cluster (center x,y + width/height)
-        // We need to convert to Top-Left for React Flow
-        return {
-          ...node,
-          position: {
-            x: x - width / 2,
-            y: y - height / 2,
-          },
-          style: {
-            ...node.style,
-            width: width,
-            height: height,
-          },
-        };
-      } else {
-        // Normal Node
-        return {
-          ...node,
-          position: {
-            x: x - width / 2,
-            y: y - height / 2,
-          },
-        };
-      }
-    }
-    return node;
-  });
-};
-
-// --- 2. Auto Formatting Logic ---
 export const autoFormatGraph = (nodes: Node[], edges: Edge[]): Node[] => {
-  // 0. Pre-process: Detect logical lane assignment based on current position
-  // This ensures that if a node is visually inside a lane, we lock it to that lane for Dagre layout.
+  // 1. Assign Lanes based on current geometry
   const nodesWithLanes = assignLaneToNodes(nodes);
 
-  // 1. Run Dagre Layout (Compound)
-  const layoutedNodes = layoutGraphWithDagre(nodesWithLanes, edges);
+  // 2. Group Nodes by Lane
+  const laneGroups = new Map<string, Node[]>();
+  const unassignedNodes: Node[] = [];
+  const swimlanes: Node[] = [];
+  const artifacts: Node[] = []; // Arrows, etc.
 
-  // 2. Apply Strict Grid Snap (180x100 Slots)
-  // Determine max extent for Swimlanes
-  let maxNodeX = 0;
-
-  const formattedNodes = layoutedNodes.map((node) => {
-    // Ignore resizing/snapping Swimlanes here, we trust Dagre's relative layout BUT we might want to snap the header?
-    // Actually, Dagre gives the tight bounding box. We should snap the *Top-Left* of the Swimlane to the grid,
-    // and expand the W/H to nearest slot multiple + padding.
-
-    // Snapping Logic
+  nodesWithLanes.forEach((node) => {
     if (node.type === 'bpmnSwimlane') {
-      const slotX = Math.round(node.position.x / SLOT_WIDTH);
-      const slotY = Math.round(node.position.y / SLOT_HEIGHT);
-
-      const newX = slotX * SLOT_WIDTH;
-      const newY = slotY * SLOT_HEIGHT;
-
-      // Snap Dimensions (Rounding UP to nearest slot to ensure coverage)
-      const rawW = Number(node.style?.width) || 0;
-      const rawH = Number(node.style?.height) || 0;
-
-      const snappedW = Math.ceil(rawW / SLOT_WIDTH) * SLOT_WIDTH; // Or round? Ceil ensures we don't clip content
-      const snappedH = Math.ceil(rawH / SLOT_HEIGHT) * SLOT_HEIGHT;
-
-      return {
-        ...node,
-        position: { x: newX, y: newY },
-        style: { ...node.style, width: snappedW, height: snappedH },
-      };
+      swimlanes.push(node);
+      if (!laneGroups.has(node.id)) {
+        laneGroups.set(node.id, []);
+      }
+    } else if (node.type === 'bpmnArrow') {
+      artifacts.push(node);
+    } else {
+      const laneId = node.data.parentLaneId as string;
+      if (laneId && laneGroups.has(laneId)) {
+        laneGroups.get(laneId)?.push(node);
+      } else {
+        unassignedNodes.push(node);
+      }
     }
+  });
 
-    // Normal Nodes
-    if (node.type === 'bpmnArrow') return node;
+  // 3. Layout Each Group
+  const resultNodes: Node[] = [...artifacts]; // Start with artifacts (or add later)
 
-    // Use existing constants
+  // Sort Swimlanes by Y to preserve vertical order
+  swimlanes.sort((a, b) => a.position.y - b.position.y);
+
+  let currentOffsetY = 0;
+
+  // Process Swimlanes
+  swimlanes.forEach((lane) => {
+    const groupNodes = laneGroups.get(lane.id) || [];
+
+    // Layout the group (Local coordinates)
+    const {
+      width: contentW,
+      height: contentH,
+      nodes: laidOutNodes,
+    } = layoutGroup(groupNodes, edges);
+
+    // Determine Lane Dimensions (Grid Snapped)
+    // Minimum 2 slots wide, 1 slot high
+    const minW = SLOT_WIDTH * 2;
+    const minH = SLOT_HEIGHT;
+
+    // Padding
+    const paddingRight = SLOT_WIDTH * 0.5;
+    const paddingBottom = SLOT_HEIGHT * 0.5;
+
+    // Lane Width should cover content
+    const laneW = Math.max(minW, contentW + paddingRight);
+    // Lane Height
+    const laneH = Math.max(minH, contentH + paddingBottom);
+
+    // Snap Lane Dimensions
+    const snappedLaneW = Math.ceil(laneW / SLOT_WIDTH) * SLOT_WIDTH;
+    const snappedLaneH = Math.ceil(laneH / SLOT_HEIGHT) * SLOT_HEIGHT;
+
+    // Update Lane Position & Size
+    const updatedLane = {
+      ...lane,
+      position: { x: 0, y: currentOffsetY },
+      style: { ...lane.style, width: snappedLaneW, height: snappedLaneH },
+    };
+    resultNodes.push(updatedLane);
+
+    // Update Children Positions (Global coordinates)
+    laidOutNodes.forEach((n) => {
+      resultNodes.push({
+        ...n,
+        position: {
+          x: n.position.x, // Lane is at X=0
+          y: n.position.y + currentOffsetY,
+        },
+      });
+    });
+
+    currentOffsetY += snappedLaneH; // Stack next lane immediately below
+  });
+
+  // Process Unassigned Nodes
+  // Place them below all lanes?
+  if (unassignedNodes.length > 0) {
+    if (swimlanes.length > 0) currentOffsetY += SLOT_HEIGHT; // Gap
+    const { nodes: laidOutNodes } = layoutGroup(unassignedNodes, edges);
+    laidOutNodes.forEach((n) => {
+      resultNodes.push({
+        ...n,
+        position: {
+          x: n.position.x,
+          y: n.position.y + currentOffsetY,
+        },
+      });
+    });
+  }
+
+  return resultNodes;
+};
+
+// --- Layout Helper Core ---
+const layoutGroup = (
+  nodes: Node[],
+  allEdges: Edge[],
+): { width: number; height: number; nodes: Node[] } => {
+  if (nodes.length === 0) return { width: 0, height: 0, nodes: [] };
+
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  // Filter edges internal to this group
+  const edges = allEdges.filter(
+    (e) => nodeMap.has(e.source) && nodeMap.has(e.target),
+  );
+
+  // 1. Assign Levels (X-axis) using Longest Path in DAG
+  const levels = new Map<string, number>();
+
+  nodes.forEach((n) => {
+    levels.set(n.id, 0);
+  });
+
+  // Relaxation for Longest Path in DAG
+  // Since N is small (< 100 usually), we can just loop N times.
+  for (let i = 0; i < nodes.length; i++) {
+    let changed = false;
+    edges.forEach((e) => {
+      const srcLvl = levels.get(e.source) || 0;
+      const tgtLvl = levels.get(e.target) || 0;
+      if (tgtLvl < srcLvl + 1) {
+        levels.set(e.target, srcLvl + 1);
+        changed = true;
+      }
+    });
+    if (!changed) break;
+  }
+
+  // 2. Assign Grid Positions (Y-axis packing)
+  const maxLevel = Math.max(...Array.from(levels.values()));
+  const gridPositions = new Map<string, { x: number; y: number }>();
+  const occupied = new Set<string>(); // "x,y"
+
+  for (let x = 0; x <= maxLevel; x++) {
+    // Get nodes at this level
+    const levelNodes = nodes.filter((n) => (levels.get(n.id) || 0) === x);
+
+    // Sort by "Ideal Y" (average of parents)
+    const nodesWithIdealY = levelNodes.map((n) => {
+      const parents = edges.filter((e) => e.target === n.id);
+      const parentPositions = parents
+        .map((e) => gridPositions.get(e.source))
+        .filter((p) => p !== undefined) as { x: number; y: number }[];
+
+      let idealY = 0;
+      if (parentPositions.length > 0) {
+        const sumY = parentPositions.reduce((sum, p) => sum + p.y, 0);
+        idealY = Math.round(sumY / parentPositions.length);
+      }
+      return { node: n, idealY };
+    });
+
+    // Secondary sort: preserve some stability or sort by ID
+    nodesWithIdealY.sort((a, b) => {
+      if (a.idealY !== b.idealY) return a.idealY - b.idealY;
+      return a.node.id.localeCompare(b.node.id);
+    });
+
+    // Place
+    nodesWithIdealY.forEach(({ node, idealY }) => {
+      let offset = 0;
+      let finalY = -1;
+
+      // Search spiral: 0, +1, -1, +2, -2...
+      while (true) {
+        const candidates =
+          offset === 0 ? [idealY] : [idealY + offset, idealY - offset];
+        for (const y of candidates) {
+          if (y < 0) continue; // No negative rows
+          const key = `${x},${y}`;
+          if (!occupied.has(key)) {
+            occupied.add(key);
+            finalY = y;
+            break;
+          }
+        }
+        if (finalY !== -1) break;
+        offset++;
+      }
+      gridPositions.set(node.id, { x, y: finalY });
+    });
+  }
+
+  // 3. Convert to Coordinates
+  let maxX = 0;
+  let maxY = 0;
+
+  const finalNodes = nodes.map((n) => {
+    const pos = gridPositions.get(n.id) || { x: 0, y: 0 };
+    maxX = Math.max(maxX, pos.x);
+    maxY = Math.max(maxY, pos.y);
+
     const isWide = ['bpmnTask', 'bpmnMessaging', 'bpmnDecision'].includes(
-      node.type || '',
+      n.type || '',
     );
     const nodeWidth = isWide ? NODE_W_WIDE : NODE_W_SQUARE;
 
-    // Note: layoutedNodes has positions from Dagre (Cluster-relative? No, Dagre usually gives absolute coords in compound too).
-    // Let's assume absolute.
-
-    const slotX = Math.round(node.position.x / SLOT_WIDTH);
-    const slotY = Math.round(node.position.y / SLOT_HEIGHT);
-
-    // Calculate Centered Position within the Slot
+    // Center X in slot
     const centeringOffsetX = (SLOT_WIDTH - nodeWidth) / 2;
-    const newX = slotX * SLOT_WIDTH + centeringOffsetX;
-    const newY = slotY * SLOT_HEIGHT + OFFSET_Y;
-
-    if (newX > maxNodeX) maxNodeX = newX;
 
     return {
-      ...node,
-      position: { x: newX, y: newY },
+      ...n,
+      position: {
+        x: pos.x * SLOT_WIDTH + centeringOffsetX,
+        y: pos.y * SLOT_HEIGHT + OFFSET_Y,
+      },
     };
   });
 
-  // 3. Post-Process Swimlanes (Uniform Width, cleanup)
-  // If we want all horizontal lanes to share the same width (Max X), we apply it here.
-  // Dagre might yield jagged widths for clusters.
-
-  const targetLaneWidth = Math.max(maxNodeX + SLOT_WIDTH * 2, SLOT_WIDTH * 5);
-
-  return formattedNodes.map((node) => {
-    if (node.type !== 'bpmnSwimlane') return node;
-
-    const isHorizontal =
-      (node.data.orientation || 'horizontal') === 'horizontal';
-
-    if (isHorizontal) {
-      // Force X=0 for aesthetics? Or trust Dagre?
-      // If Dagre put a lane at X=500 because it only has late nodes, that's valid but maybe ugly for a "Pool".
-      // Typically Swimlanes start at X=0.
-      // Let's force X=0 and extend Width.
-
-      return {
-        ...node,
-        position: { ...node.position, x: 0 },
-        style: {
-          ...node.style,
-          width: targetLaneWidth,
-        },
-      };
-    }
-
-    return node;
-  });
+  return {
+    width: (maxX + 1) * SLOT_WIDTH,
+    height: (maxY + 1) * SLOT_HEIGHT,
+    nodes: finalNodes,
+  };
 };
 
 // --- 3. Swimlane Hit Testing Logic ---
