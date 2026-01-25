@@ -8,6 +8,7 @@ export const SHEET_NAMES = {
   FOLDER_PERMISSIONS: 'Folder_Permissions',
   FLOWS: 'Flows',
   FLOW_VERSIONS: 'Flow_Versions',
+  SYSTEM_LOGS: 'System_Logs',
 } as const;
 
 /**

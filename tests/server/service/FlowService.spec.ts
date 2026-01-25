@@ -30,20 +30,28 @@ global.LockService = {
 // Mock dependencies
 vi.mock('../../../server/repository/SheetDB', () => {
   return {
-    SheetDB: vi.fn(() => ({
-      getData: mockGetData,
-      insert: mockInsert,
-      update: mockUpdate,
-    })),
+    SheetDB: class {
+      getData = mockGetData;
+      insert = mockInsert;
+      update = mockUpdate;
+    },
   };
 });
 
 vi.mock('../../../server/service/AuthService', () => {
   return {
-    AuthService: vi.fn(() => ({
-      getAuthorizedFolderIds: vi.fn(),
-      getRole: vi.fn(),
-    })),
+    AuthService: class {
+      getAuthorizedFolderIds = vi.fn();
+      getRole = vi.fn();
+    },
+  };
+});
+
+vi.mock('../../../server/service/LoggerService', () => {
+  return {
+    LoggerService: class {
+      log = vi.fn();
+    },
   };
 });
 

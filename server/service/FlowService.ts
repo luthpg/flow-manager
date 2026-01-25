@@ -14,14 +14,17 @@ import {
   generateReleaseVersionId,
 } from '../utils/version';
 import { AuthService } from './AuthService';
+import { LoggerService } from './LoggerService';
 
 export class FlowService {
   private db: SheetDB;
   private auth: AuthService;
+  private logger: LoggerService;
 
   constructor() {
     this.db = new SheetDB();
     this.auth = new AuthService();
+    this.logger = new LoggerService();
   }
 
   /**
@@ -93,7 +96,12 @@ export class FlowService {
    * 承認申請 (Submit)
    * - ロックを取得し、ステータスをPENDINGに変更
    */
-  submitFlow(flowId: string, versionId: string, comment: string) {
+  submitFlow(
+    flowId: string,
+    versionId: string,
+    userEmail: string,
+    comment: string,
+  ) {
     const lock = LockService.getScriptLock();
     try {
       lock.waitLock(APP_CONFIG.LOCK_WAIT_MS);
@@ -107,7 +115,7 @@ export class FlowService {
       );
 
       if (!target || target.status !== 'DRAFT') {
-        throw new Error('申請可能な下書きが見つかりません: ' + versionId);
+        throw new Error(`申請可能な下書きが見つかりません: ${versionId}`);
       }
 
       // ステータス更新
@@ -120,6 +128,14 @@ export class FlowService {
         currentStatus: 'PENDING',
         updatedAt: new Date(),
       });
+
+      // ログ記録
+      this.logger.log(
+        'SUBMIT_FLOW',
+        userEmail,
+        flowId,
+        `Version: ${versionId}`,
+      );
     } catch (e) {
       throw new Error(`排他制御エラー: ${e}`);
     } finally {
@@ -250,6 +266,14 @@ export class FlowService {
         updatedAt: new Date(),
       });
 
+      // ログ記録
+      this.logger.log(
+        'APPROVE_FLOW',
+        approverEmail,
+        flowId,
+        `New Version: ${newVersionId}`,
+      );
+
       return newVersionId;
     } catch (e) {
       throw new Error(`Approval failed: ${e}`);
@@ -302,6 +326,14 @@ export class FlowService {
         currentStatus: 'REJECTED',
         updatedAt: new Date(),
       });
+
+      // ログ記録
+      this.logger.log(
+        'REJECT_FLOW',
+        rejecterEmail,
+        flowId,
+        `Version: ${versionId}`,
+      );
     } catch (e) {
       throw new Error(`Rejection failed: ${e}`);
     } finally {

@@ -125,7 +125,7 @@ import { GRID_SIZE, OFFSET_Y, SLOT_HEIGHT, SLOT_WIDTH } from '@/lib/constants';
 import { serverScripts } from '@/lib/server';
 import { cn } from '@/lib/utils';
 import { useFlowStore } from '@/stores/flow-store';
-import type { FlowData, FlowStatus } from '~/types/flow';
+import type { FlowData, FlowStatus, Role } from '~/types/flow';
 
 // 定義済みカラーパレット（BPMNツールでよくある色）
 const LANE_COLORS = [
@@ -251,19 +251,19 @@ function FlowEditorContent({
   // --- Local UI State ---
   const [flowTitle, setFlowTitle] = useState('');
   const [flowStatus, setFlowStatus] = useState<FlowStatus>('DRAFT');
+  const [userRole, setUserRole] = useState<Role>('VIEWER');
   const [folderId, setFolderId] = useState('temp-folder-id');
   const [loading, setLoading] = useState(true);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [exportedJson, setExportedJson] = useState('');
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importJson, setImportJson] = useState('');
   const [pendingJumpNodeId, setPendingJumpNodeId] = useState<string | null>(
     null,
   );
-  const [clipboard, setClipboard] = useState<{
-    nodes: Node[];
-    edges: Edge[];
-  } | null>(null);
+  // Clipboard state removed in favor of localStorage
 
   // Dialogs State
   const [isInsertDialogOpen, setIsInsertDialogOpen] = useState(false);
@@ -537,6 +537,14 @@ function FlowEditorContent({
       try {
         const res = await serverScripts.getFlowData(id, version);
         if (res != null) {
+          const role = res.userRole ?? 'VIEWER';
+          if (role === 'VIEWER') {
+            toast.error('You do not have permission to edit this flow.');
+            navigate('/dashboard');
+            return;
+          }
+          setUserRole(role);
+
           // ▼ Store's init action
           init(
             res.graphData,
@@ -560,6 +568,31 @@ function FlowEditorContent({
     };
     fetchData();
   }, [id, version, sheetId, init, navigate]);
+
+  // --- 1.5 Lock Heartbeat ---
+  useEffect(() => {
+    const doHeartbeat = async () => {
+      try {
+        const res = await serverScripts.startEditing(id);
+        if (!res.success && res.lockedBy) {
+          toast.error(`Locked by ${res.lockedBy}`, {
+            description: 'Someone else is editing this flow.',
+            duration: Infinity,
+            action: {
+              label: 'Go to Dashboard',
+              onClick: () => navigate('/dashboard'),
+            },
+          });
+        }
+      } catch (e) {
+        console.error('Heartbeat failed', e);
+      }
+    };
+
+    doHeartbeat();
+    const interval = setInterval(doHeartbeat, 1000 * 60 * 4); // 4 mins
+    return () => clearInterval(interval);
+  }, [id, navigate]);
 
   // --- 2. Event Handlers ---
 
@@ -713,19 +746,93 @@ function FlowEditorContent({
     [screenToFlowPosition, nodes, setNodes],
   );
 
+  const onNodeDrag = useCallback(
+    (_: React.MouseEvent, _draggedNode: Node) => {
+      // スイムレーンの自動拡張
+      const currentNodes = useFlowStore.getState().nodes;
+      const selectedNodes = currentNodes.filter(
+        (n) => n.selected && n.type !== 'bpmnSwimlane',
+      );
+
+      if (selectedNodes.length === 0) return;
+
+      let changed = false;
+      const newNodes = currentNodes.map((lane) => {
+        if (lane.type !== 'bpmnSwimlane') return lane;
+
+        let laneW = Number(lane.style?.width) || SLOT_WIDTH;
+        let laneH = Number(lane.style?.height) || SLOT_HEIGHT;
+        let laneChanged = false;
+
+        const laneX = lane.position.x;
+        const laneY = lane.position.y;
+
+        for (const node of selectedNodes) {
+          const nodeW = node.measured?.width ?? 60;
+          const nodeH = node.measured?.height ?? 60;
+          const nodeRight = node.position.x + nodeW;
+          const nodeBottom = node.position.y + nodeH;
+          const centerX = node.position.x + nodeW / 2;
+          const centerY = node.position.y + nodeH / 2;
+
+          // 判定: ノードがレーンの「内部」または「右下」にあるか
+          if (centerX > laneX && centerY > laneY) {
+            // 横方向の拡張
+            if (centerY < laneY + laneH + SLOT_HEIGHT) {
+              if (nodeRight > laneX + laneW - 20) {
+                laneW = Math.max(laneW, nodeRight - laneX + SLOT_WIDTH);
+                laneW = Math.ceil(laneW / SLOT_WIDTH) * SLOT_WIDTH;
+                laneChanged = true;
+              }
+            }
+
+            // 縦方向の拡張
+            if (centerX < laneX + laneW + SLOT_WIDTH) {
+              if (nodeBottom > laneY + laneH - 20) {
+                laneH = Math.max(laneH, nodeBottom - laneY + SLOT_HEIGHT);
+                laneH = Math.ceil(laneH / SLOT_HEIGHT) * SLOT_HEIGHT;
+                laneChanged = true;
+              }
+            }
+          }
+        }
+
+        if (laneChanged) {
+          changed = true;
+          return {
+            ...lane,
+            style: { ...lane.style, width: laneW, height: laneH },
+          };
+        }
+        return lane;
+      });
+
+      if (changed) {
+        setNodes(newNodes);
+      }
+    },
+    [setNodes],
+  );
+
   const onNodeDragStop = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      const { x, y } = snapToSlot(
-        node.position.x,
-        node.position.y,
-        node.type || 'default',
-      );
-      const newNodes = nodes.map((n) =>
-        n.id === node.id ? { ...n, position: { x, y } } : n,
-      );
+    (_: React.MouseEvent, _draggedNode: Node) => {
+      const currentNodes = useFlowStore.getState().nodes;
+
+      const newNodes = currentNodes.map((node) => {
+        if (node.selected) {
+          const { x, y } = snapToSlot(
+            node.position.x,
+            node.position.y,
+            node.type || 'default',
+          );
+          return { ...node, position: { x, y } };
+        }
+        return node;
+      });
+
       setNodes(newNodes);
     },
-    [nodes, setNodes],
+    [setNodes],
   );
 
   // ▼ 削除ハンドラ
@@ -931,7 +1038,7 @@ function FlowEditorContent({
         folderId,
         flowId: id,
         versionId: version,
-        activeVersionId: version, // ＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊＊仮定義
+        activeVersionId: version, // 仮の設定
         title: flowTitle,
         currentStatus: flowStatus,
         updatedAt: new Date().toISOString(),
@@ -942,6 +1049,30 @@ function FlowEditorContent({
     setExportedJson(JSON.stringify(exportData, null, 2));
     setIsExportDialogOpen(true);
   }, [id, version, folderId, flowTitle, flowStatus, getSnapshot]);
+
+  const handleImport = useCallback(() => {
+    try {
+      const parsed = JSON.parse(importJson);
+      // Validate structure roughly
+      if (!parsed.graphData || !parsed.graphData.sheets) {
+        throw new Error('Invalid JSON format: missing graphData.sheets');
+      }
+
+      // Restore
+      init(
+        parsed.graphData,
+        '/flow/[id]/[version]/edit',
+        { id, version, sheetId },
+        navigate,
+      );
+      toast.success('Flow imported successfully');
+      setIsImportDialogOpen(false);
+      setImportJson('');
+    } catch (e) {
+      console.error(e);
+      toast.error(`Failed to import JSON: ${(e as Error).message}`);
+    }
+  }, [importJson, init, id, version, sheetId, navigate]);
 
   // --- Helper: 指定ノードへズームイン ---
   const focusNode = useCallback(
@@ -1270,13 +1401,19 @@ function FlowEditorContent({
 
     if (selectedNodes.length === 0) return;
 
-    // Deep Copyして保存
-    setClipboard({
-      nodes: JSON.parse(JSON.stringify(selectedNodes)),
-      edges: JSON.parse(JSON.stringify(selectedEdges)),
-    });
-
-    toast.info(`Copied ${selectedNodes.length} items`);
+    // LocalStorageへ保存
+    const clipData = {
+      nodes: selectedNodes,
+      edges: selectedEdges,
+      timestamp: Date.now(),
+    };
+    try {
+      localStorage.setItem('flow-clipboard', JSON.stringify(clipData));
+      toast.info(`Copied ${selectedNodes.length} items`);
+    } catch (e) {
+      console.error('Failed to copy to clipboard', e);
+      toast.error('Copy failed (Quota exceeded?)');
+    }
   }, [nodes, edges]);
 
   // 2. 切り取り
@@ -1287,19 +1424,41 @@ function FlowEditorContent({
     if (selectedNodes.length === 0) return;
 
     // コピーしてから削除
-    setClipboard({
-      nodes: JSON.parse(JSON.stringify(selectedNodes)),
-      edges: JSON.parse(JSON.stringify(selectedEdges)),
-    });
-
-    deleteElements({ nodes: selectedNodes, edges: selectedEdges });
-    toast.info('Cut selection');
+    const clipData = {
+      nodes: selectedNodes,
+      edges: selectedEdges,
+      timestamp: Date.now(),
+    };
+    try {
+      localStorage.setItem('flow-clipboard', JSON.stringify(clipData));
+      deleteElements({ nodes: selectedNodes, edges: selectedEdges });
+      toast.info('Cut selection');
+    } catch (e) {
+      console.error('Failed to cut', e);
+      toast.error('Cut failed');
+    }
   }, [nodes, edges, deleteElements]);
 
   // 3. ペースト
   const handlePaste = useCallback(
     (targetPosition?: { x: number; y: number }) => {
-      if (!clipboard || clipboard.nodes.length === 0) return;
+      const json = localStorage.getItem('flow-clipboard');
+      if (!json) return;
+
+      let clipboard: { nodes: Node[]; edges: Edge[] } | null = null;
+      try {
+        clipboard = JSON.parse(json);
+      } catch (e) {
+        console.error('Failed to parse clipboard', e);
+        return;
+      }
+
+      if (
+        !clipboard ||
+        !Array.isArray(clipboard.nodes) ||
+        clipboard.nodes.length === 0
+      )
+        return;
 
       // IDマッピング
       const idMap = new Map<string, string>();
@@ -1384,7 +1543,7 @@ function FlowEditorContent({
 
       toast.success('Pasted');
     },
-    [clipboard, nodes, edges, setNodes, setEdges],
+    [nodes, edges, setNodes, setEdges],
   );
 
   // Undo Handler
@@ -1599,6 +1758,9 @@ function FlowEditorContent({
               <DropdownMenuItem onClick={handleExportJson}>
                 Export as JSON
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
+                Import JSON
+              </DropdownMenuItem>
               <DropdownMenuItem className="text-destructive">
                 Delete Flow
               </DropdownMenuItem>
@@ -1647,6 +1809,7 @@ function FlowEditorContent({
                   onConnect={onConnect}
                   onDrop={onDrop}
                   onDragOver={onDragOver}
+                  onNodeDrag={onNodeDrag}
                   onNodeDragStop={onNodeDragStop}
                   onSelectionChange={onSelectionChange}
                   onNodeClick={onNodeClick}
@@ -1751,7 +1914,6 @@ function FlowEditorContent({
                 const flowPos = screenToFlowPosition(screenPos);
                 handlePaste(flowPos);
               }}
-              disabled={!clipboard}
             >
               <ClipboardPaste className="mr-2 h-4 w-4" /> Paste
               <ContextMenuShortcut>⌘V</ContextMenuShortcut>
@@ -2027,6 +2189,36 @@ function FlowEditorContent({
         </DialogContent>
       </Dialog>
 
+      {/* Import JSON Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import JSON</DialogTitle>
+            <DialogDescription>
+              Paste the JSON content of a flow to restore it. This will
+              overwrite current changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              value={importJson}
+              onChange={(e) => setImportJson(e.target.value)}
+              placeholder='{"graphData": ...}'
+              className="h-48 font-mono text-xs"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsImportDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleImport}>Import</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ▼ Insert Dialog */}
       <Dialog open={isInsertDialogOpen} onOpenChange={setIsInsertDialogOpen}>
         <DialogContent>
@@ -2044,7 +2236,9 @@ function FlowEditorContent({
                 max={20}
                 value={insertCount}
                 onFocus={() => takeSnapshot(nodes, edges)}
-                onChange={(e) => setInsertCount(parseInt(e.target.value) || 1)}
+                onChange={(e) =>
+                  setInsertCount(parseInt(e.target.value, 10) || 1)
+                }
               />
               <p className="text-xs text-muted-foreground">
                 1 unit ={' '}
@@ -2088,7 +2282,7 @@ function FlowEditorContent({
                 value={deleteCountInput}
                 onFocus={() => takeSnapshot(nodes, edges)}
                 onChange={(e) =>
-                  setDeleteCountInput(parseInt(e.target.value) || 1)
+                  setDeleteCountInput(parseInt(e.target.value, 10) || 1)
                 }
               />
               <p className="text-xs text-muted-foreground">

@@ -44,7 +44,13 @@ export function addFolderPermission(
   email: string,
   role: Role,
 ) {
-  const newPerm = authService.addFolderPermission(folderId, email, role);
+  const actorEmail = Session.getActiveUser().getEmail();
+  const newPerm = authService.addFolderPermission(
+    folderId,
+    email,
+    role,
+    actorEmail,
+  );
   return serialize(newPerm);
 }
 
@@ -52,7 +58,8 @@ export function addFolderPermission(
  * フォルダ権限削除
  */
 export function removeFolderPermission(permissionId: string) {
-  authService.removeFolderPermission(permissionId);
+  const actorEmail = Session.getActiveUser().getEmail();
+  authService.removeFolderPermission(permissionId, actorEmail);
   return serialize({ success: true, permissionId });
 }
 
@@ -60,7 +67,12 @@ export function removeFolderPermission(permissionId: string) {
  * フォルダ権限更新
  */
 export function updateFolderPermission(permissionId: string, role: Role) {
-  const updated = authService.updateFolderPermission(permissionId, role);
+  const actorEmail = Session.getActiveUser().getEmail();
+  const updated = authService.updateFolderPermission(
+    permissionId,
+    role,
+    actorEmail,
+  );
   return serialize(updated);
 }
 
@@ -145,7 +157,12 @@ export function submitFlow(payload: {
   // ▼ 権限チェック
   authService.requirePermission(email, payload.flowId, 'EDITOR');
 
-  flowService.submitFlow(payload.flowId, payload.versionId, payload.comment);
+  flowService.submitFlow(
+    payload.flowId,
+    payload.versionId,
+    email,
+    payload.comment,
+  );
   return serialize({ status: 'PENDING' });
 }
 
@@ -197,4 +214,30 @@ export function rejectFlow(payload: {
   );
 
   return serialize({ status: 'REJECTED' });
+}
+
+/**
+ * 編集開始通知 (Heartbeat)
+ * - 戻り値: { success: boolean; lockedBy?: string }
+ */
+export function startEditing(flowId: string) {
+  const email = Session.getActiveUser().getEmail();
+
+  // Lock Check
+  const lockKey = `edit_lock_${flowId}`;
+  const cache = CacheService.getScriptCache();
+  const currentLock = cache.get(lockKey); // "email"
+
+  const result: { success: boolean; lockedBy?: string } = { success: true };
+
+  if (currentLock && currentLock !== email) {
+    // 他の人がロック中
+    result.success = false;
+    result.lockedBy = currentLock;
+  } else {
+    // Lock (or Refresh) for 5 minutes
+    cache.put(lockKey, email, 300);
+  }
+
+  return serialize(result);
 }

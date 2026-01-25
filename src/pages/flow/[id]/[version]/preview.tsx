@@ -376,12 +376,11 @@ function ViewerContent({
         const res = await serverScripts.getFlowData(id, version);
 
         if (res != null) {
-          const { meta, graphData, version: verData } = res;
+          const { meta, graphData, version: verData, userRole } = res;
 
           setFlowTitle(meta.title);
           setFlowStatus(verData.status);
-          // TODO: User Role should be fetched from somewhere or determined
-          setUserRole('EDITOR'); // 仮: 権限ロジックの実装が必要
+          setUserRole(userRole ?? 'VIEWER');
 
           // ストア初期化
           init(
@@ -505,7 +504,6 @@ function ViewerContent({
     activeSheetId,
     isDiffMode,
     rawDiffResult,
-    isDark,
     resolvedTheme,
     setNodes,
     setEdges,

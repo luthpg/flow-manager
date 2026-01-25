@@ -208,7 +208,7 @@ describe('BPMN Logic', () => {
       const n2 = formatted.find((n) => n.id === '2');
 
       // In LR layout, n2 (target) should have a greater X than n1 (source)
-      expect(n2!.position.x).toBeGreaterThan(n1!.position.x);
+      expect(n2?.position.x).toBeGreaterThan(n1!.position.x);
     });
   });
 

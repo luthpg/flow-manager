@@ -1,6 +1,7 @@
 import type { Role } from '~/types/flow';
 import { SHEET_NAMES } from '../constants';
 import { SheetDB } from '../repository/SheetDB';
+import { LoggerService } from './LoggerService';
 
 // 権限レベル定義 (数値が大きいほど強い)
 export const ROLE_LEVELS: Record<Role, number> = {
@@ -30,9 +31,11 @@ export interface UserRow {
 
 export class AuthService {
   private db: SheetDB;
+  private logger: LoggerService;
 
   constructor() {
     this.db = new SheetDB();
+    this.logger = new LoggerService();
   }
 
   /**
@@ -165,6 +168,7 @@ export class AuthService {
     folderId: string,
     subjectEmail: string,
     role: Role,
+    actorEmail: string,
   ): PermissionRow {
     const permissionId = `perm_${Utilities.getUuid().slice(0, 8)}`;
     const newPerm: PermissionRow = {
@@ -174,24 +178,51 @@ export class AuthService {
       role,
     };
     this.db.insert(SHEET_NAMES.FOLDER_PERMISSIONS, newPerm);
+
+    // ログ記録
+    this.logger.log(
+      'ADD_PERMISSION',
+      actorEmail,
+      folderId,
+      `Added ${role} for ${subjectEmail}`,
+    );
+
     return newPerm;
   }
 
   /**
    * 権限の削除
    */
-  removeFolderPermission(permissionId: string): void {
+  removeFolderPermission(permissionId: string, actorEmail: string): void {
+    const permissions = this.db.getData<PermissionRow>(
+      SHEET_NAMES.FOLDER_PERMISSIONS,
+    );
+    const target = permissions.find((p) => p.permissionId === permissionId);
+
     this.db.delete(
       SHEET_NAMES.FOLDER_PERMISSIONS,
       'permissionId',
       permissionId,
     );
+
+    if (target) {
+      this.logger.log(
+        'REMOVE_PERMISSION',
+        actorEmail,
+        target.folderId,
+        `Removed permission for ${target.subjectEmail}`,
+      );
+    }
   }
 
   /**
    * 権限の更新
    */
-  updateFolderPermission(permissionId: string, role: Role): PermissionRow {
+  updateFolderPermission(
+    permissionId: string,
+    role: Role,
+    actorEmail: string,
+  ): PermissionRow {
     const permissions = this.db.getData<PermissionRow>(
       SHEET_NAMES.FOLDER_PERMISSIONS,
     );
@@ -205,6 +236,15 @@ export class AuthService {
       permissionId,
       updated,
     );
+
+    // ログ記録
+    this.logger.log(
+      'UPDATE_PERMISSION',
+      actorEmail,
+      target.folderId,
+      `Updated role to ${role} for ${target.subjectEmail}`,
+    );
+
     return updated;
   }
 
