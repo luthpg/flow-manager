@@ -25,9 +25,11 @@
 
 ### 1.3 管理画面 (Admin UI) (Priority: Medium)
 
-- **監査ログ閲覧**:
+- [ ] **監査ログ閲覧**:
   - **現状**: バックエンド (`LoggerService`) は実装済みだが、閲覧するUIがない。
   - **タスク**: ダッシュボードまたは設定画面に「監査ログ (Audit Log)」タブを追加し、`System_Logs` の内容を表示する。
+  - [x] `LoggerService.ts` への `getLogs` 追加 (Backend)
+  - [x] `AuditLogViewer` コンポーネント作成 (Frontend)
 
 ## 2. バックエンド (Server / GAS)
 

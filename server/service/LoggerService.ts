@@ -31,4 +31,27 @@ export class LoggerService {
       // Don't throw, logging failure shouldn't break the app flow
     }
   }
+
+  getLogs(limit?: number) {
+    const logs = this.db.getData<{
+      logId: string;
+      timestamp: string | Date; // Depending on SheetDB parsing
+      action: LogAction;
+      actor: string;
+      targetId: string;
+      details: string;
+    }>(SHEET_NAMES.SYSTEM_LOGS);
+
+    // Sort by timestamp desc
+    logs.sort((a, b) => {
+      const dateA = new Date(a.timestamp).getTime();
+      const dateB = new Date(b.timestamp).getTime();
+      return dateB - dateA;
+    });
+
+    if (limit) {
+      return logs.slice(0, limit);
+    }
+    return logs;
+  }
 }

@@ -3,7 +3,11 @@ import {
   getPromisedServerScripts,
   type PartialScriptType,
 } from '@ciderjs/gasnuki/promise';
-import type { PermissionRow, ServerScripts } from '~/types/appsscript/client';
+import type {
+  LogAction,
+  PermissionRow,
+  ServerScripts,
+} from '~/types/appsscript/client';
 import type { FlowMeta, FlowVersionDetail, Folder } from '~/types/flow';
 
 // mockData.ts
@@ -225,6 +229,34 @@ const mockup: PartialScriptType<ServerScripts> = {
   rejectFlow: async () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return serialize({ status: 'REJECTED' });
+  },
+
+  getSystemLogs: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return serialize([
+      {
+        logId: 'log-1',
+        timestamp: new Date().toISOString(),
+        action: 'APPROVE_FLOW' as LogAction,
+        actor: 'admin@example.com',
+        targetId: 'flow-1',
+        details: 'Approved v1',
+      },
+      {
+        logId: 'log-2',
+        timestamp: new Date(Date.now() - 3600000).toISOString(),
+        action: 'SUBMIT_FLOW' as LogAction,
+        actor: 'user@example.com',
+        targetId: 'flow-1',
+        details: 'Submitted for review',
+      },
+    ]);
+  },
+
+  forceUnlock: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    console.log('Mock: Force Unlock');
+    return serialize({ success: true });
   },
 };
 

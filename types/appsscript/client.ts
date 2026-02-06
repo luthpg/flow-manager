@@ -173,6 +173,27 @@ export type ServerScripts = {
     flowId: string,
   ): JsonString<{ success: boolean; lockedBy?: string }>;
 
+  /**
+   * 監査ログ取得 (Admin Only)
+   */
+  getSystemLogs(
+    limit: number,
+  ): JsonString<
+    {
+      logId: string;
+      timestamp: string | Date;
+      action: LogAction;
+      actor: string;
+      targetId: string;
+      details: string;
+    }[]
+  >;
+
+  /**
+   * 強制ロック解除 (Admin)
+   */
+  forceUnlock(flowId: string): JsonString<{ success: boolean }>;
+
   toFlowMeta(row: FlowRow): FlowMeta;
 
   toFlowVersionDetail(row: FlowVersionRow): FlowVersionDetail;

@@ -70,6 +70,7 @@ import {
   BpmnTaskNode,
   BpmnTimerEventNode,
 } from '@/components/custom-nodes';
+import { ForceUnlockAction } from '@/components/ForceUnlockAction'; // NEW
 import { ModeToggle } from '@/components/mode-toggle';
 import { SheetTabs } from '@/components/sheet-tabs';
 import { useTheme } from '@/components/theme-provider';
@@ -125,7 +126,7 @@ import { GRID_SIZE, OFFSET_Y, SLOT_HEIGHT, SLOT_WIDTH } from '@/lib/constants';
 import { serverScripts } from '@/lib/server';
 import { cn } from '@/lib/utils';
 import { useFlowStore } from '@/stores/flow-store';
-import type { FlowData, FlowStatus, Role } from '~/types/flow';
+import type { FlowData, FlowStatus } from '~/types/flow';
 
 // 定義済みカラーパレット（BPMNツールでよくある色）
 const LANE_COLORS = [
@@ -251,7 +252,6 @@ function FlowEditorContent({
   // --- Local UI State ---
   const [flowTitle, setFlowTitle] = useState('');
   const [flowStatus, setFlowStatus] = useState<FlowStatus>('DRAFT');
-  const [userRole, setUserRole] = useState<Role>('VIEWER');
   const [folderId, setFolderId] = useState('temp-folder-id');
   const [loading, setLoading] = useState(true);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -543,7 +543,7 @@ function FlowEditorContent({
             navigate('/dashboard');
             return;
           }
-          setUserRole(role);
+          // setUserRole(role); // Removed as unused state
 
           // ▼ Store's init action
           init(
@@ -578,8 +578,14 @@ function FlowEditorContent({
           toast.error(`Locked by ${res.lockedBy}`, {
             description: 'Someone else is editing this flow.',
             duration: Infinity,
-            action: {
-              label: 'Go to Dashboard',
+            action: (
+              <ForceUnlockAction
+                flowId={id}
+                onUnlock={() => window.location.reload()}
+              />
+            ),
+            cancel: {
+              label: 'Dashboard',
               onClick: () => navigate('/dashboard'),
             },
           });

@@ -1,5 +1,6 @@
 import { FileSpreadsheet, Menu, Plus, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { AuditLogViewer } from '@/components/dashboard/AuditLogViewer'; // NEW
 import { FlowCard } from '@/components/dashboard/FlowCard';
 import { ShareDialog } from '@/components/dashboard/ShareDialog'; // NEW
 import { Sidebar } from '@/components/dashboard/Sidebar';
@@ -7,6 +8,7 @@ import { ModeToggle } from '@/components/mode-toggle';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'; // NEW
 import { serverScripts } from '@/lib/server';
 import type { FlowMeta, Folder } from '~/types/flow';
 
@@ -146,33 +148,59 @@ export default function Dashboard() {
 
         {/* --- Main Content --- */}
         <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
-          {/* Grid Layout for Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
-            {displayedFlows.map((flow) => (
-              <FlowCard key={flow.flowId} flow={flow} />
-            ))}
-          </div>
+          <Tabs defaultValue="flows" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="flows" className="gap-2">
+                <FileSpreadsheet className="w-4 h-4" />
+                My Flows
+              </TabsTrigger>
+              <TabsTrigger value="logs" className="gap-2">
+                <FileSpreadsheet className="w-4 h-4" />{' '}
+                {/* Use distinctive icon if possible */}
+                Audit Logs
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Empty State */}
-          {!loading && displayedFlows.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-              <FileSpreadsheet className="w-12 h-12 mb-2 opacity-20" />
-              <p>No flows found</p>
-              {searchTerm && <p className="text-sm">Matching "{searchTerm}"</p>}
-              {selectedFolderId && (
-                <p className="text-sm">
-                  In folder "
-                  {folders.find((f) => f.folderId === selectedFolderId)?.name}"
-                </p>
+            <TabsContent value="flows" className="outline-none">
+              {/* Grid Layout for Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
+                {displayedFlows.map((flow) => (
+                  <FlowCard key={flow.flowId} flow={flow} />
+                ))}
+              </div>
+
+              {/* Empty State */}
+              {!loading && displayedFlows.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+                  <FileSpreadsheet className="w-12 h-12 mb-2 opacity-20" />
+                  <p>No flows found</p>
+                  {searchTerm && (
+                    <p className="text-sm">Matching "{searchTerm}"</p>
+                  )}
+                  {selectedFolderId && (
+                    <p className="text-sm">
+                      In folder "
+                      {
+                        folders.find((f) => f.folderId === selectedFolderId)
+                          ?.name
+                      }
+                      "
+                    </p>
+                  )}
+                </div>
               )}
-            </div>
-          )}
 
-          {loading && (
-            <div className="flex items-center justify-center h-64 text-muted-foreground">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-            </div>
-          )}
+              {loading && (
+                <div className="flex items-center justify-center h-64 text-muted-foreground">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="logs" className="outline-none">
+              <AuditLogViewer />
+            </TabsContent>
+          </Tabs>
         </main>
       </div>
 
