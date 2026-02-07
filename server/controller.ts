@@ -145,6 +145,16 @@ export function saveDraft(payload: {
 }
 
 /**
+ * フロー新規作成
+ * - 権限: 全員（または制限が必要ならAuthServiceで）
+ */
+export function createFlow(payload: { title: string; folderId: string }) {
+  const email = Session.getActiveUser().getEmail();
+  const result = flowService.createFlow(email, payload.title, payload.folderId);
+  return serialize(result);
+}
+
+/**
  * 承認申請
  * - 権限: EDITOR以上
  */

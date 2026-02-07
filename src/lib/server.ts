@@ -132,6 +132,14 @@ const mockup: PartialScriptType<ServerScripts> = {
     return serialize(mockPermissions.filter((p) => p.folderId === folderId));
   },
 
+  createFlow: async (_payload) => {
+    await sleep(800);
+    return serialize({
+      flowId: `new-flow-${Date.now()}`,
+      versionId: 'draft-test-20250101',
+    });
+  },
+
   addFolderPermission: async (folderId, email, role) => {
     await sleep(800);
     const newPerm: PermissionRow & {

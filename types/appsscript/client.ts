@@ -135,6 +135,15 @@ export type ServerScripts = {
   }): JsonString<{ versionId: string }>;
 
   /**
+   * フロー新規作成
+   * - 権限: 全員（または制限が必要ならAuthServiceで）
+   */
+  createFlow(payload: {
+    title: string;
+    folderId: string;
+  }): JsonString<{ flowId: string; versionId: string }>;
+
+  /**
    * 承認申請
    * - 権限: EDITOR以上
    */

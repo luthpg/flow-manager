@@ -1,3 +1,4 @@
+import { useNavigate } from '@ciderjs/city-gas/react';
 import { FileSpreadsheet, Menu, Plus, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AuditLogViewer } from '@/components/dashboard/AuditLogViewer'; // NEW
@@ -13,6 +14,7 @@ import { serverScripts } from '@/lib/server';
 import type { FlowMeta, Folder } from '~/types/flow';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [flows, setFlows] = useState<FlowMeta[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -67,6 +69,26 @@ export default function Dashboard() {
   const handleShareFolder = (folderId: string) => {
     setShareFolderId(folderId);
     setShareDialogOpen(true);
+  };
+
+  const handleNewFlow = async () => {
+    setLoading(true);
+    try {
+      const res = await serverScripts.createFlow({
+        title: 'New Flow',
+        folderId: selectedFolderId || 'root',
+      });
+      if (res != null) {
+        navigate('/flow/[id]/[version]/edit', {
+          id: res.flowId,
+          version: res.versionId,
+        });
+      }
+    } catch (e) {
+      console.error('Failed to create new flow', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getFolderName = (id: string | null) => {
@@ -125,6 +147,8 @@ export default function Dashboard() {
         <Button
           size="sm"
           className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm gap-2"
+          onClick={handleNewFlow}
+          disabled={loading}
         >
           <Plus className="w-4 h-4" />
           <span className="hidden sm:inline">New Flow</span>
@@ -209,7 +233,8 @@ export default function Dashboard() {
         <Button
           size="lg"
           className="w-14 h-14 rounded-2xl bg-blue-600 hover:bg-blue-700 shadow-xl transition-transform hover:scale-105 active:scale-95 p-0 grid place-items-center"
-          onClick={() => console.log('Navigate to New Flow')}
+          onClick={handleNewFlow}
+          disabled={loading}
         >
           <Plus className="w-8 h-8 text-white" />
         </Button>

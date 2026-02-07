@@ -28,6 +28,53 @@ export class FlowService {
   }
 
   /**
+   * フロー新規作成
+   */
+  createFlow(userEmail: string, title: string, folderId: string) {
+    const flowId = Utilities.getUuid();
+    const versionId = generateDraftVersionId(userEmail);
+
+    // 1. フロー親レコード作成
+    this.db.insert(SHEET_NAMES.FLOWS, {
+      flowId,
+      folderId,
+      title,
+      currentStatus: 'DRAFT',
+      activeVersionId: versionId,
+      updatedAt: new Date(),
+    });
+
+    // 2. 初期バージョン（下書き）作成
+    const emptyGraph: any = {
+      activeSheetId: 'sheet-1',
+      sheets: [
+        {
+          id: 'sheet-1',
+          name: 'Main Sheet',
+          nodes: [],
+          edges: [],
+        },
+      ],
+    };
+    const splitData = splitJsonData(JSON.stringify(emptyGraph));
+
+    this.db.insert(SHEET_NAMES.FLOW_VERSIONS, {
+      versionId,
+      flowId,
+      versionNum: 1,
+      status: 'DRAFT',
+      ...splitData,
+      createdBy: userEmail,
+      createdAt: new Date(),
+      comment: 'Initial flow',
+    });
+
+    this.logger.log('SUBMIT_FLOW', userEmail, flowId, 'Created new flow');
+
+    return { flowId, versionId };
+  }
+
+  /**
    * 下書き保存 (Save Draft)
    * - 指定されたユーザーのドラフトバージョンID (draft-user-date) を生成
    * - 既に同日のドラフトがあれば上書き、なければ新規作成
